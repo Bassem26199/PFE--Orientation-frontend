@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import 'analyser_symptomes_screen.dart';
 import 'mes_rendezvous_screen.dart';
 import 'historique_orientation_screen.dart';
+import 'mes_ordonnances_screen.dart';
 import 'mon_profil_screen.dart';
 import 'public_navigation_screen.dart';
 
@@ -75,15 +77,21 @@ class PatientHome extends StatelessWidget {
                 color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Bienvenue 👋",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    "Bienvenue, ${AuthService.displayName} 👋",
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  SizedBox(height: 8),
-                  Text("Gérez votre orientation médicale facilement"),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Gérez votre orientation médicale facilement.",
+                    style: TextStyle(fontSize: 14, color: Colors.black54),
+                  ),
                 ],
               ),
             ),
@@ -126,6 +134,18 @@ class PatientHome extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                           builder: (_) => const HistoriqueOrientationScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  buildCard(
+                    icon: Icons.receipt_long,
+                    title: "Mes ordonnances",
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MesOrdonnancesScreen(),
                         ),
                       );
                     },

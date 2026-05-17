@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../config/api_config.dart';
 import '../services/auth_service.dart';
 import 'doctors_by_specialite_screen.dart';
 import 'login_screen.dart';
@@ -148,6 +150,31 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
     );
   }
 
+  Future<int?> resolvePatientAge() async {
+    final cached = AuthService.currentUser?["age"];
+    if (cached != null) return int.tryParse(cached.toString());
+
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/me"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${AuthService.token}",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final user = data["data"];
+        if (user is Map && user["age"] != null) {
+          return int.tryParse(user["age"].toString());
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   Future<void> analyser() async {
     if (selectedSymptomes.isEmpty && symptomesLibres.isEmpty) return;
 
@@ -158,9 +185,17 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
 
     setState(() => isLoading = true);
 
+    final patientAge = await resolvePatientAge();
+    final apiUrl = "${AuthService.baseUrl}/orientation";
+
+    debugPrint("[Orientation] API=$apiUrl age=$patientAge");
+
     try {
+      final health = await http.get(Uri.parse("${AuthService.baseUrl}/health"));
+      debugPrint("[Orientation] health ${health.statusCode} ${health.body}");
+
       final response = await http.post(
-        Uri.parse("${AuthService.baseUrl}/orientation"),
+        Uri.parse(apiUrl),
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
@@ -169,29 +204,89 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
         body: jsonEncode({
           "symptomes": selectedSymptomes,
           "symptomes_libres": symptomesLibres,
+          if (patientAge != null) "age": patientAge,
         }),
       );
 
-      final data = jsonDecode(response.body);
-
       if (!mounted) return;
+
+      debugPrint(
+        "[Orientation] POST ${response.statusCode} body=${response.body}",
+      );
+
+      Map<String, dynamic> data = {};
+      if (response.body.isNotEmpty) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final result = data["data"];
+        if (result is! Map) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Réponse serveur invalide")),
+          );
+          return;
+        }
+
+        final engineVersion = result["engine_version"]?.toString();
+        final idSpecialite = result["id_specialite"];
+        final nomSpecialite = result["nom_specialite"]?.toString() ?? "";
+        final ageFromApi = result["age_patient"] ?? patientAge;
+        final ageNum = ageFromApi != null ? int.tryParse(ageFromApi.toString()) : patientAge;
+
+        if (engineVersion == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "⚠ Ancien serveur détecté ($apiUrl). Lancez Laravel depuis PFE--Orientation-medical.",
+              ),
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
+
+        final isPediatrie = idSpecialite == 3 ||
+            nomSpecialite.toLowerCase().contains('pédiat') ||
+            nomSpecialite.toLowerCase().contains('pediat');
+
+        if (isPediatrie && ageNum != null && ageNum > 17) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Erreur : le serveur a renvoyé Pédiatrie pour $ageNum ans. "
+                "Vérifiez que Laravel tourne sur ${ApiConfig.baseUrl}",
+              ),
+              duration: const Duration(seconds: 8),
+            ),
+          );
+          return;
+        }
+
         showResultDialog(
-          result: result,
-          specialite: result["nom_specialite"] ?? "Non définie",
-          urgence: result["niveau_urgence"] ?? "-",
+          result: Map<String, dynamic>.from(result),
+          specialite: result["nom_specialite"]?.toString() ?? "Non définie",
+          urgence: result["niveau_urgence"]?.toString() ?? "-",
+          agePatient: result["age_patient"],
+          profil: result["profil"]?.toString(),
         );
       } else {
+        final message = data["message"]?.toString() ??
+            "Erreur (${response.statusCode})";
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"] ?? "Erreur")),
+          SnackBar(content: Text(message)),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur serveur")),
+        SnackBar(
+          content: Text(
+            "Impossible de joindre le serveur. Vérifiez l'URL API et que Laravel tourne.",
+          ),
+        ),
       );
     }
 
@@ -202,6 +297,8 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
     required Map result,
     required String specialite,
     required String urgence,
+    int? agePatient,
+    String? profil,
   }) {
     final isUrgent = urgence == "URGENT";
     final isModere = urgence == "MODERE" || urgence == "MODÉRÉ";
@@ -247,6 +344,14 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
                 "Niveau d’urgence : $urgence",
                 style: TextStyle(color: color, fontWeight: FontWeight.bold),
               ),
+              if (agePatient != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  "Recommandation adaptée à votre profil ($agePatient ans${profil != null ? ", $profil" : ""})",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
               if (symptomesLibres.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(

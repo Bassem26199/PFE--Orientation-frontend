@@ -4,9 +4,12 @@ import '../services/auth_service.dart';
 import 'patient_home.dart';
 import 'secretaire_home.dart';
 import 'medecin_home.dart';
+import 'admin_home.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final String? initialEmail;
+
+  const LoginScreen({super.key, this.initialEmail});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -18,6 +21,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool isLoading = false;
   bool obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final email = widget.initialEmail?.trim();
+    if (email != null && email.isNotEmpty) {
+      emailController.text = email;
+    }
+  }
 
   Future<void> login() async {
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
@@ -59,9 +71,15 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(builder: (_) => const MedecinHome()),
           (route) => false,
         );
+      } else if (role == "ADMIN") {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminHome()),
+          (route) => false,
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Espace $role bientôt disponible")),
+          SnackBar(content: Text("Espace $role bientot disponible")),
         );
       }
     } else {

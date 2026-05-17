@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
+import '../services/password_service.dart';
 import 'public_navigation_screen.dart';
 
 class SecretaireHome extends StatefulWidget {
@@ -16,9 +17,15 @@ class _SecretaireHomeState extends State<SecretaireHome> {
   int selectedIndex = 0;
   bool isLoading = true;
 
-  final String cabinetName = "Cabinet du Dr. Trabelsi Sami";
+  String cabinetName = "Cabinet médical";
+  String disponibiliteTexte = "";
 
   List<Map<String, dynamic>> demandes = [];
+  List<Map<String, dynamic>> patients = [];
+  List<Map<String, dynamic>> caisse = [];
+  List<Map<String, dynamic>> horaires = [];
+  List<Map<String, dynamic>> exceptions = [];
+  Map<String, dynamic> stats = {};
 
   String rdvSearch = "";
   String rdvStatutFilter = "TOUS";
@@ -28,94 +35,149 @@ class _SecretaireHomeState extends State<SecretaireHome> {
   String caisseSearch = "";
   String caisseStatutFilter = "TOUS";
 
-  final List<Map<String, dynamic>> patients = [
-    {
-      "nom": "Ben Salah",
-      "prenom": "Ali",
-      "email": "ali.patient@gmail.com",
-      "telephone": "20111222",
-      "genre": "M",
-      "age": "32",
-      "dernierRdv": "2026-04-27",
-      "prochainRdv": "2026-05-04 à 10:00",
-    },
-    {
-      "nom": "Test",
-      "prenom": "User",
-      "email": "test@test.com",
-      "telephone": "20111222",
-      "genre": "M",
-      "age": "28",
-      "dernierRdv": "2026-04-29",
-      "prochainRdv": "-",
-    },
-  ];
+  Map<String, String> _headers() => {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${AuthService.token}",
+        "Content-Type": "application/json",
+      };
 
-  final List<Map<String, dynamic>> caisse = [
-    {
-      "patient": "Ali Ben Salah",
-      "date": "2026-04-27",
-      "montant": 50,
-      "statut": "PAYÉ",
-    },
-    {
-      "patient": "User Test",
-      "date": "2026-04-29",
-      "montant": 50,
-      "statut": "NON_PAYÉ",
-    },
-  ];
-
-  final List<Map<String, dynamic>> horaires = [
-    {"jour": "Lundi", "debut": "09:00", "fin": "13:00", "actif": true},
-    {"jour": "Mardi", "debut": "09:00", "fin": "13:00", "actif": true},
-    {"jour": "Mercredi", "debut": "09:00", "fin": "13:00", "actif": true},
-    {"jour": "Jeudi", "debut": "09:00", "fin": "13:00", "actif": true},
-    {"jour": "Vendredi", "debut": "09:00", "fin": "12:00", "actif": true},
-    {"jour": "Samedi", "debut": "-", "fin": "-", "actif": false},
-    {"jour": "Dimanche", "debut": "-", "fin": "-", "actif": false},
-  ];
-
-  final List<Map<String, dynamic>> exceptions = [];
+  List<Map<String, dynamic>> _parseList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (raw is Map && raw['data'] is List) {
+      return (raw['data'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    return [];
+  }
 
   @override
   void initState() {
     super.initState();
-    fetchDemandes();
+    final user = AuthService.currentUser;
+    if (user?['cabinet'] != null) {
+      cabinetName = user!['cabinet'].toString();
+    }
+    loadAllData();
+  }
+
+  Future<void> loadAllData() async {
+    setState(() => isLoading = true);
+    await Future.wait([
+      fetchDashboard(),
+      fetchDemandes(),
+      fetchPatients(),
+      fetchCaisse(),
+      fetchDisponibilites(),
+    ]);
+    if (mounted) setState(() => isLoading = false);
+  }
+
+  Future<void> fetchDashboard() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/secretaire/dashboard"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted || data['success'] != true) return;
+
+      final payload = data['data'] as Map<String, dynamic>;
+      setState(() {
+        stats = Map<String, dynamic>.from(payload['stats'] ?? {});
+        cabinetName = payload['cabinet']?['nom']?.toString() ?? cabinetName;
+        disponibiliteTexte =
+            payload['cabinet']?['disponibilite']?.toString() ?? '';
+        if (payload['demandes_recentes'] != null) {
+          final recents = _parseList(payload['demandes_recentes']);
+          if (recents.isNotEmpty && demandes.isEmpty) {
+            demandes = recents;
+          }
+        }
+        if (payload['patients_recents'] != null && patients.isEmpty) {
+          patients = _parseList(payload['patients_recents']).map((p) {
+            return {
+              'id_patient': p['id_patient'],
+              'nom': p['nom'],
+              'prenom': p['prenom'],
+              'email': p['email'] ?? '',
+              'telephone': p['telephone'] ?? '',
+              'genre': p['genre'] ?? '-',
+              'age': '${p['age'] ?? '-'}',
+              'dernierRdv': p['dernier_rdv'] ?? p['dernierRdv'] ?? '-',
+              'prochainRdv': p['prochain_rdv'] ?? p['prochainRdv'] ?? '-',
+            };
+          }).toList();
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> fetchDemandes() async {
-    setState(() => isLoading = true);
-
     try {
       final response = await http.get(
-        Uri.parse("${AuthService.baseUrl}/demandes-rendezvous"),
-        headers: {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${AuthService.token}",
-        },
+        Uri.parse("${AuthService.baseUrl}/secretaire/demandes"),
+        headers: _headers(),
       );
-
       final data = jsonDecode(response.body);
-
+      if (!mounted) return;
       setState(() {
-        if (data["data"] is Map && data["data"]["data"] != null) {
-          demandes = List<Map<String, dynamic>>.from(
-            data["data"]["data"].map((e) => Map<String, dynamic>.from(e)),
-          );
-        } else if (data["data"] is List) {
-          demandes = List<Map<String, dynamic>>.from(
-            data["data"].map((e) => Map<String, dynamic>.from(e)),
-          );
-        } else {
-          demandes = [];
-        }
-
-        isLoading = false;
+        demandes = data['success'] == true ? _parseList(data['data']) : [];
       });
-    } catch (e) {
-      setState(() => isLoading = false);
+    } catch (_) {
+      if (mounted) setState(() => demandes = []);
     }
+  }
+
+  Future<void> fetchPatients() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/secretaire/patients"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      setState(() {
+        patients = data['success'] == true ? _parseList(data['data']) : [];
+      });
+    } catch (_) {
+      if (mounted) setState(() => patients = []);
+    }
+  }
+
+  Future<void> fetchCaisse() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/secretaire/caisse"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      setState(() {
+        caisse = data['success'] == true ? _parseList(data['data']) : [];
+      });
+    } catch (_) {
+      if (mounted) setState(() => caisse = []);
+    }
+  }
+
+  Future<void> fetchDisponibilites() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/secretaire/disponibilites"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted || data['success'] != true) return;
+      final payload = data['data'] as Map<String, dynamic>;
+      setState(() {
+        horaires = _parseList(payload['horaires']);
+        disponibiliteTexte = payload['texte']?.toString() ?? disponibiliteTexte;
+        exceptions = _parseList(payload['exceptions']);
+      });
+    } catch (_) {}
   }
 
   Future<void> traiterDemande(int idDemande, String action) async {
@@ -138,7 +200,7 @@ class _SecretaireHomeState extends State<SecretaireHome> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data["message"] ?? "Action effectuée")),
         );
-        fetchDemandes();
+        loadAllData();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data["message"] ?? "Erreur")),
@@ -195,7 +257,11 @@ class _SecretaireHomeState extends State<SecretaireHome> {
   }
 
   int totalCaisse() {
-    return caisse.fold<int>(0, (sum, e) => sum + ((e["montant"] ?? 0) as int));
+    final fromStats = stats['caisse_total'];
+    if (fromStats != null) return int.tryParse('$fromStats') ?? 0;
+    return caisse
+        .where((e) => e['statut'] == 'PAYÉ')
+        .fold<int>(0, (sum, e) => sum + ((e['montant'] ?? 0) as num).toInt());
   }
 
   Color statutColor(String statut) {
@@ -446,9 +512,13 @@ Widget appDrawer() {
   }
 
   Widget dashboardPage() {
-    final enAttente = countByStatut("EN_ATTENTE");
-    final confirmees = countByStatut("CONFIRMEE") + countByStatut("CONFIRMÉE");
-    final refusees = countByStatut("REFUSEE") + countByStatut("REFUSÉE");
+    final enAttente = stats['en_attente'] ?? countByStatut("EN_ATTENTE");
+    final confirmees = stats['confirmees'] ??
+        (countByStatut("CONFIRMEE") + countByStatut("CONFIRMÉE"));
+    final refusees =
+        stats['refusees'] ?? (countByStatut("REFUSEE") + countByStatut("REFUSÉE"));
+    final patientsCount = stats['patients'] ?? patients.length;
+    final rdvAujourdhui = stats['rdv_aujourdhui'] ?? 0;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -463,13 +533,13 @@ Widget appDrawer() {
         Row(
           children: [
             statCard(Icons.cancel, "Refusés", "$refusees", Colors.red),
-            statCard(Icons.people, "Patients", "${patients.length}", Colors.blue),
+            statCard(Icons.people, "Patients", "$patientsCount", Colors.blue),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            statCard(Icons.today, "RDV aujourd'hui", "2", Colors.purple),
+            statCard(Icons.today, "RDV aujourd'hui", "$rdvAujourdhui", Colors.purple),
             statCard(Icons.payments, "Caisse", "${totalCaisse()} DT", Colors.teal),
           ],
         ),
@@ -745,16 +815,6 @@ Widget appDrawer() {
           hint: "Rechercher patient...",
           onChanged: (v) => setState(() => patientSearch = v),
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: ElevatedButton.icon(
-            onPressed: showAddPatientDialog,
-            icon: const Icon(Icons.person_add),
-            label: const Text("Ajouter patient"),
-          ),
-        ),
         const SizedBox(height: 16),
         if (filteredPatients.isEmpty)
           emptyState(Icons.people, "Aucun patient trouvé", "La liste des patients apparaîtra ici.")
@@ -765,66 +825,11 @@ Widget appDrawer() {
   }
 
   void showAddPatientDialog() {
-    final nom = TextEditingController();
-    final prenom = TextEditingController();
-    final email = TextEditingController();
-    final tel = TextEditingController();
-    final age = TextEditingController();
-    final dernier = TextEditingController();
-    final prochain = TextEditingController();
-    String genre = "M";
-
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text("Ajouter patient"),
-            content: SingleChildScrollView(
-              child: Column(
-                children: [
-                  TextField(controller: nom, decoration: const InputDecoration(labelText: "Nom")),
-                  TextField(controller: prenom, decoration: const InputDecoration(labelText: "Prénom")),
-                  TextField(controller: email, decoration: const InputDecoration(labelText: "Email")),
-                  TextField(controller: tel, decoration: const InputDecoration(labelText: "Téléphone")),
-                  TextField(controller: age, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Âge")),
-                  DropdownButtonFormField<String>(
-                    value: genre,
-                    decoration: const InputDecoration(labelText: "Genre"),
-                    items: const [
-                      DropdownMenuItem(value: "M", child: Text("Homme")),
-                      DropdownMenuItem(value: "F", child: Text("Femme")),
-                    ],
-                    onChanged: (v) => setDialogState(() => genre = v!),
-                  ),
-                  TextField(controller: dernier, decoration: const InputDecoration(labelText: "Dernier RDV")),
-                  TextField(controller: prochain, decoration: const InputDecoration(labelText: "Prochain RDV")),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    patients.insert(0, {
-                      "nom": nom.text,
-                      "prenom": prenom.text,
-                      "email": email.text,
-                      "telephone": tel.text,
-                      "genre": genre,
-                      "age": age.text,
-                      "dernierRdv": dernier.text.isEmpty ? "-" : dernier.text,
-                      "prochainRdv": prochain.text.isEmpty ? "-" : prochain.text,
-                    });
-                  });
-                  Navigator.pop(context);
-                },
-                child: const Text("Ajouter"),
-              ),
-            ],
-          );
-        },
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Les patients sont ajoutés via l\'orientation médicale et les demandes de RDV.',
+        ),
       ),
     );
   }
@@ -854,7 +859,10 @@ Widget appDrawer() {
                 icon: const Icon(Icons.edit, color: Colors.blue),
               ),
               IconButton(
-                onPressed: () => showAddPaymentDialog(fullName),
+                onPressed: () => showAddPaymentDialog(
+                  fullName,
+                  idPatient: p['id_patient'] as int?,
+                ),
                 icon: const Icon(Icons.payments, color: Colors.green),
               ),
             ],
@@ -885,32 +893,66 @@ Widget appDrawer() {
 
   void showEditPatientDialog(Map<String, dynamic> p) {
     final tel = TextEditingController(text: p["telephone"]);
-    final prochain = TextEditingController(text: p["prochainRdv"]);
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Modifier patient"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: tel, decoration: const InputDecoration(labelText: "Téléphone")),
-            TextField(controller: prochain, decoration: const InputDecoration(labelText: "Prochain RDV")),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text("Modifier patient"),
+          content: TextField(
+            controller: tel,
+            decoration: const InputDecoration(labelText: "Téléphone"),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text("Annuler"),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() => saving = true);
+                      try {
+                        final id = p['id_patient'];
+                        final response = await http.put(
+                          Uri.parse("${AuthService.baseUrl}/secretaire/patients/$id"),
+                          headers: _headers(),
+                          body: jsonEncode({'telephone': tel.text}),
+                        );
+                        final data = jsonDecode(response.body);
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        if (response.statusCode == 200 && data['success'] == true) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(data['message'] ?? 'Mis à jour')),
+                          );
+                          fetchPatients();
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(data['message'] ?? 'Erreur')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text("Enregistrer"),
+            ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                p["telephone"] = tel.text;
-                p["prochainRdv"] = prochain.text;
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Enregistrer"),
-          ),
-        ],
       ),
     );
   }
@@ -950,35 +992,76 @@ Widget appDrawer() {
     );
   }
 
-  void showAddPaymentDialog(String patientName) {
-    final montant = TextEditingController();
+  void showAddPaymentDialog(String patientName, {int? idPatient}) {
+    final montant = TextEditingController(text: '50');
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Ajouter paiement - $patientName"),
-        content: TextField(
-          controller: montant,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: "Montant (DT)"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                caisse.insert(0, {
-                  "patient": patientName,
-                  "date": DateTime.now().toString().substring(0, 10),
-                  "montant": int.tryParse(montant.text) ?? 0,
-                  "statut": "PAYÉ",
-                });
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Ajouter"),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text("Ajouter paiement - $patientName"),
+          content: TextField(
+            controller: montant,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: "Montant (DT)"),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text("Annuler"),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() => saving = true);
+                      try {
+                        final response = await http.post(
+                          Uri.parse("${AuthService.baseUrl}/secretaire/caisse"),
+                          headers: _headers(),
+                          body: jsonEncode({
+                            'patient': patientName,
+                            if (idPatient != null) 'id_patient': idPatient,
+                            'montant': int.tryParse(montant.text) ?? 50,
+                            'statut': 'PAYÉ',
+                          }),
+                        );
+                        final data = jsonDecode(response.body);
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        if (response.statusCode >= 200 &&
+                            response.statusCode < 300 &&
+                            data['success'] == true) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(data['message'] ?? 'Paiement ajouté')),
+                          );
+                          fetchCaisse();
+                          fetchDashboard();
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(data['message'] ?? 'Erreur')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text("Ajouter"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1037,30 +1120,132 @@ Widget appDrawer() {
 
   void showEditMontantDialog(Map<String, dynamic> c) {
     final montant = TextEditingController(text: c["montant"].toString());
+    final id = c['id_paiement'] ?? c['id_rendezvous'];
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Modifier montant"),
-        content: TextField(
-          controller: montant,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: "Montant (DT)"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                c["montant"] = int.tryParse(montant.text) ?? c["montant"];
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Enregistrer"),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text("Modifier paiement"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: montant,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: "Montant (DT)"),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              await _updatePaiementStatut(ctx, id, 'NON_PAYÉ');
+                            },
+                      child: const Text('Non payé'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              await _updatePaiementStatut(ctx, id, 'PAYÉ');
+                            },
+                      child: const Text('Payé'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text("Annuler"),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() => saving = true);
+                      try {
+                        final response = await http.put(
+                          Uri.parse("${AuthService.baseUrl}/secretaire/caisse/$id"),
+                          headers: _headers(),
+                          body: jsonEncode({
+                            'montant': int.tryParse(montant.text) ?? c['montant'],
+                          }),
+                        );
+                        final data = jsonDecode(response.body);
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        if (response.statusCode == 200 && data['success'] == true) {
+                          fetchCaisse();
+                          fetchDashboard();
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(data['message'] ?? 'Erreur')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text("Enregistrer"),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _updatePaiementStatut(
+    BuildContext ctx,
+    dynamic id,
+    String statut,
+  ) async {
+    try {
+      final response = await http.put(
+        Uri.parse("${AuthService.baseUrl}/secretaire/caisse/$id"),
+        headers: _headers(),
+        body: jsonEncode({'statut': statut}),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      Navigator.pop(ctx);
+      if (response.statusCode == 200 && data['success'] == true) {
+        fetchCaisse();
+        fetchDashboard();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? 'Erreur')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(ctx);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
+    }
   }
 
   void showRecuDialog(Map<String, dynamic> c) {
@@ -1090,7 +1275,25 @@ Widget appDrawer() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        ...horaires.map(horaireCard),
+        if (disponibiliteTexte.isNotEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: whiteCard(),
+            child: Text(
+              disponibiliteTexte,
+              style: const TextStyle(color: Colors.black87),
+            ),
+          ),
+        if (horaires.isEmpty)
+          emptyState(
+            Icons.schedule,
+            'Horaires non définis',
+            'Le médecin n\'a pas encore configuré ses disponibilités.',
+          )
+        else
+          ...horaires.map(horaireCard),
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
@@ -1141,44 +1344,11 @@ Widget appDrawer() {
   }
 
   void showEditHoraireDialog(Map<String, dynamic> h) {
-    final debut = TextEditingController(text: h["debut"]);
-    final fin = TextEditingController(text: h["fin"]);
-    bool actif = h["actif"] == true;
-
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text("Modifier ${h["jour"]}"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  value: actif,
-                  title: const Text("Jour disponible"),
-                  onChanged: (v) => setDialogState(() => actif = v),
-                ),
-                TextField(controller: debut, decoration: const InputDecoration(labelText: "Heure début")),
-                TextField(controller: fin, decoration: const InputDecoration(labelText: "Heure fin")),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    h["actif"] = actif;
-                    h["debut"] = actif ? debut.text : "-";
-                    h["fin"] = actif ? fin.text : "-";
-                  });
-                  Navigator.pop(context);
-                },
-                child: const Text("Enregistrer"),
-              ),
-            ],
-          );
-        },
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Les horaires du ${h["jour"]} sont gérés par le médecin (lecture seule).',
+        ),
       ),
     );
   }
@@ -1346,14 +1516,44 @@ Widget appDrawer() {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
         ElevatedButton(
-          onPressed: () {
-            setState(() {
-              AuthService.currentUser?["nom"] = nom.text;
-              AuthService.currentUser?["prenom"] = prenom.text;
-              AuthService.currentUser?["email"] = email.text;
-              AuthService.currentUser?["telephone"] = tel.text;
-            });
-            Navigator.pop(context);
+          onPressed: () async {
+            try {
+              final response = await http.put(
+                Uri.parse("${AuthService.baseUrl}/secretaire/profile"),
+                headers: _headers(),
+                body: jsonEncode({
+                  'nom': nom.text,
+                  'prenom': prenom.text,
+                  'email': email.text,
+                  'telephone': tel.text,
+                }),
+              );
+              final data = jsonDecode(response.body);
+              if (!mounted) return;
+              Navigator.pop(context);
+              if (response.statusCode == 200 && data['success'] == true) {
+                final updated = data['data'] as Map<String, dynamic>;
+                setState(() {
+                  AuthService.currentUser?['nom'] = updated['nom'];
+                  AuthService.currentUser?['prenom'] = updated['prenom'];
+                  AuthService.currentUser?['email'] = updated['email'];
+                  AuthService.currentUser?['telephone'] = updated['telephone'];
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(data['message'] ?? 'Profil mis à jour')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(data['message'] ?? 'Erreur')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
           },
           child: const Text("Enregistrer"),
         ),
@@ -1365,30 +1565,109 @@ Widget appDrawer() {
   void showChangePasswordDialog() {
     final oldPass = TextEditingController();
     final newPass = TextEditingController();
+    final confirmPass = TextEditingController();
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Changer mot de passe"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: oldPass, obscureText: true, decoration: const InputDecoration(labelText: "Ancien mot de passe")),
-            TextField(controller: newPass, obscureText: true, decoration: const InputDecoration(labelText: "Nouveau mot de passe")),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Changer mot de passe'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: oldPass,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Ancien mot de passe *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newPass,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nouveau mot de passe * (min. 6)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmPass,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmer *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (newPass.text.length < 6) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Minimum 6 caractères')),
+                        );
+                        return;
+                      }
+                      if (newPass.text != confirmPass.text) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Les mots de passe ne correspondent pas'),
+                          ),
+                        );
+                        return;
+                      }
+                      setDialogState(() => saving = true);
+                      try {
+                        final result = await PasswordService.changePassword(
+                          ancienMotDePasse: oldPass.text,
+                          nouveauMotDePasse: newPass.text,
+                        );
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              result['success'] == true
+                                  ? result['message'] as String
+                                  : PasswordService.formatErrors(
+                                      result['errors'],
+                                      result['message'] as String,
+                                    ),
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Valider'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Mot de passe modifié localement pour la démonstration.")),
-              );
-            },
-            child: const Text("Valider"),
-          ),
-        ],
       ),
     );
   }
@@ -1437,7 +1716,7 @@ Widget appDrawer() {
       appBar: AppBar(
         title: const Text("Espace Secrétaire"),
         actions: [
-          IconButton(onPressed: fetchDemandes, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: loadAllData, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: Column(

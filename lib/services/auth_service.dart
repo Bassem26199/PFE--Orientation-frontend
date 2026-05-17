@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/api_config.dart';
+
 class AuthService {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static String get baseUrl => ApiConfig.baseUrl;
 
   static String? token;
   static Map<String, dynamic>? currentUser;
@@ -65,4 +68,24 @@ class AuthService {
   }
 
   static bool get isLoggedIn => token != null;
+
+  static String get displayName {
+    final user = currentUser;
+    if (user == null) return 'Patient';
+
+    final prenom = user['prenom']?.toString().trim() ?? '';
+    final nom = user['nom']?.toString().trim() ?? '';
+
+    if (prenom.isNotEmpty && nom.isNotEmpty) return '$prenom $nom';
+    if (prenom.isNotEmpty) return prenom;
+    if (nom.isNotEmpty) return nom;
+
+    return user['email']?.toString() ?? 'Patient';
+  }
+
+  static String get firstName {
+    final prenom = currentUser?['prenom']?.toString().trim();
+    if (prenom != null && prenom.isNotEmpty) return prenom;
+    return displayName;
+  }
 }

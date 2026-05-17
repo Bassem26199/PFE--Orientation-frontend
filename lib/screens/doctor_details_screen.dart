@@ -1,9 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/auth_service.dart';
+import '../services/nominatim_service.dart';
+import '../widgets/location_map_view.dart';
+import '../widgets/patient_doctor_route_map.dart';
 import 'create_rendezvous_screen.dart';
 
-class DoctorDetailsScreen extends StatelessWidget {
+class DoctorDetailsScreen extends StatefulWidget {
   final Map doctor;
   final int idOrientation;
   final String imageUrl;
@@ -15,17 +21,107 @@ class DoctorDetailsScreen extends StatelessWidget {
     required this.imageUrl,
   });
 
+  @override
+  State<DoctorDetailsScreen> createState() => _DoctorDetailsScreenState();
+}
+
+class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
+  double? _doctorLat;
+  double? _doctorLng;
+  double? _patientLat;
+  double? _patientLng;
+  bool _mapLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveLocations();
+  }
+
+  double? _parseCoord(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  Future<void> _loadPatientLocation() async {
+    if (AuthService.token == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/me"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${AuthService.token}",
+        },
+      );
+      final data = jsonDecode(response.body);
+      if (data["success"] == true && data["data"] is Map) {
+        final profile = data["data"] as Map;
+        _patientLat = _parseCoord(profile["latitude"]);
+        _patientLng = _parseCoord(profile["longitude"]);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _resolveLocations() async {
+    await _loadPatientLocation();
+
+    var lat = _parseCoord(widget.doctor['latitude']);
+    var lng = _parseCoord(widget.doctor['longitude']);
+
+    if (lat == null || lng == null) {
+      final adresse = widget.doctor['adresse_cabinet']?.toString() ?? '';
+      final ville = widget.doctor['ville']?.toString() ?? '';
+      final query = [adresse, ville, 'Tunisie']
+          .where((e) => e.isNotEmpty)
+          .join(', ');
+
+      if (query.isNotEmpty) {
+        final coords = await NominatimService.forwardGeocode(query);
+        if (coords != null) {
+          lat = coords.latitude;
+          lng = coords.longitude;
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _doctorLat = lat;
+      _doctorLng = lng;
+      _mapLoading = false;
+    });
+  }
+
   Future<void> openMap() async {
-    final adresse = doctor["adresse_cabinet"] ?? doctor["ville"] ?? "";
-    final query = Uri.encodeComponent(adresse);
-    final url =
-        Uri.parse("https://www.google.com/maps/search/?api=1&query=$query");
+    final dLat = _doctorLat;
+    final dLng = _doctorLng;
+    final pLat = _patientLat;
+    final pLng = _patientLng;
+    final Uri url;
+
+    if (pLat != null && pLng != null && dLat != null && dLng != null) {
+      url = Uri.parse(
+        "https://www.google.com/maps/dir/?api=1"
+        "&origin=$pLat,$pLng&destination=$dLat,$dLng&travelmode=driving",
+      );
+    } else if (dLat != null && dLng != null) {
+      url = Uri.parse(
+        "https://www.google.com/maps/search/?api=1&query=$dLat,$dLng",
+      );
+    } else {
+      final adresse =
+          widget.doctor["adresse_cabinet"] ?? widget.doctor["ville"] ?? "";
+      final query = Uri.encodeComponent(adresse.toString());
+      url = Uri.parse("https://www.google.com/maps/search/?api=1&query=$query");
+    }
 
     await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   Future<void> callDoctor() async {
-    final phone = doctor["telephone_professionnel"] ?? "";
+    final phone = widget.doctor["telephone_professionnel"] ?? "";
     if (phone.toString().isEmpty) return;
 
     final url = Uri.parse("tel:$phone");
@@ -35,7 +131,7 @@ class DoctorDetailsScreen extends StatelessWidget {
   }
 
   Future<void> whatsappDoctor() async {
-    final phone = doctor["telephone_professionnel"] ?? "";
+    final phone = widget.doctor["telephone_professionnel"] ?? "";
     if (phone.toString().isEmpty) return;
 
     final cleanPhone = phone.toString().replaceAll("+", "");
@@ -84,13 +180,108 @@ class DoctorDetailsScreen extends StatelessWidget {
     );
   }
 
+  Widget _mapSection() {
+    final adresse = widget.doctor["adresse_cabinet"]?.toString() ?? "";
+    final hasPatient =
+        _patientLat != null && _patientLng != null;
+    final hasDoctor = _doctorLat != null && _doctorLng != null;
+    final hasRoute = hasPatient && hasDoctor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          hasRoute
+              ? "Itinéraire vers le cabinet"
+              : "Localisation du cabinet",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        if (hasRoute) ...[
+          const SizedBox(height: 4),
+          const Text(
+            "Trajet en voiture depuis votre position",
+            style: TextStyle(color: Colors.black54, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 10),
+        if (_mapLoading)
+          Container(
+            height: 280,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text("Chargement de la carte..."),
+              ],
+            ),
+          )
+        else if (hasRoute)
+          PatientDoctorRouteMap(
+            patientLat: _patientLat!,
+            patientLng: _patientLng!,
+            doctorLat: _doctorLat!,
+            doctorLng: _doctorLng!,
+            doctorAddress: adresse.isNotEmpty ? adresse : null,
+            height: 280,
+          )
+        else if (hasDoctor)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!hasPatient)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    "Ajoutez votre adresse dans Mon profil pour voir l'itinéraire.",
+                    style: TextStyle(fontSize: 12, color: Colors.black87),
+                  ),
+                ),
+              LocationMapView(
+                latitude: _doctorLat!,
+                longitude: _doctorLng!,
+                height: 240,
+                markerLabel: adresse.isNotEmpty ? adresse : null,
+              ),
+            ],
+          )
+        else
+          Container(
+            height: 120,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Text(
+              "Carte indisponible pour cette adresse.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black54),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final nom = "Dr. ${doctor['nom']} ${doctor['prenom']}";
-    final ville = doctor["ville"] ?? "-";
-    final telephone = doctor["telephone_professionnel"] ?? "-";
-    final adresse = doctor["adresse_cabinet"] ?? "-";
-    final note = doctor["note_moyenne"]?.toString() ?? "-";
+    final nom = "Dr. ${widget.doctor['nom']} ${widget.doctor['prenom']}";
+    final ville = widget.doctor["ville"] ?? "-";
+    final telephone = widget.doctor["telephone_professionnel"] ?? "-";
+    final adresse = widget.doctor["adresse_cabinet"] ?? "-";
+    final note = widget.doctor["note_moyenne"]?.toString() ?? "-";
+    final distance = widget.doctor["distance_km"];
 
     return Scaffold(
       appBar: AppBar(
@@ -99,6 +290,7 @@ class DoctorDetailsScreen extends StatelessWidget {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(18),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
               width: double.infinity,
@@ -114,7 +306,7 @@ class DoctorDetailsScreen extends StatelessWidget {
                   CircleAvatar(
                     radius: 55,
                     backgroundColor: Colors.white,
-                    backgroundImage: NetworkImage(imageUrl),
+                    backgroundImage: NetworkImage(widget.imageUrl),
                   ),
                   const SizedBox(height: 14),
                   Text(
@@ -128,29 +320,33 @@ class DoctorDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "$ville • ⭐ $note",
+                    distance != null
+                        ? "$ville • ${distance} km • ⭐ $note"
+                        : "$ville • ⭐ $note",
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 20),
-
+            _mapSection(),
+            const SizedBox(height: 20),
             infoTile(Icons.location_city, "Ville", ville),
-            infoTile(Icons.location_on, "Adresse", adresse),
+            infoTile(Icons.location_on, "Adresse du cabinet", adresse),
             infoTile(Icons.phone, "Téléphone", telephone),
             infoTile(Icons.star, "Note moyenne", note),
-
             const SizedBox(height: 12),
-
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: openMap,
                     icon: const Icon(Icons.map),
-                    label: const Text("Carte"),
+                    label: Text(
+                      _patientLat != null && _doctorLat != null
+                          ? "Itinéraire Maps"
+                          : "Ouvrir dans Maps",
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -163,9 +359,7 @@ class DoctorDetailsScreen extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 10),
-
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -174,9 +368,7 @@ class DoctorDetailsScreen extends StatelessWidget {
                 label: const Text("Contacter via WhatsApp"),
               ),
             ),
-
             const SizedBox(height: 18),
-
             SizedBox(
               width: double.infinity,
               height: 52,
@@ -186,8 +378,8 @@ class DoctorDetailsScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => CreateRendezvousScreen(
-                        doctor: doctor,
-                        idOrientation: idOrientation,
+                        doctor: widget.doctor,
+                        idOrientation: widget.idOrientation,
                       ),
                     ),
                   );

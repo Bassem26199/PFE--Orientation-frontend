@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-
 import '../services/auth_service.dart';
-import '../services/ordonnance_pdf_service.dart';
+import '../services/password_service.dart';
 import '../data/medicaments_data.dart';
+import '../widgets/location_map_view.dart';
+import '../widgets/ordonnance_tab.dart';
+import 'modifier_profil_medecin_screen.dart';
 import 'public_navigation_screen.dart';
-import '../services/ordonnance_pdf_service.dart';
 class MedecinHome extends StatefulWidget {
   const MedecinHome({super.key});
 
@@ -22,6 +23,11 @@ class _MedecinHomeState extends State<MedecinHome> {
   String patientSearch = "";
 
   List<Map<String, dynamic>> rendezvous = [];
+  List<Map<String, dynamic>> demandes = [];
+  List<Map<String, dynamic>> patients = [];
+  List<Map<String, dynamic>> secretaires = [];
+  Map<String, dynamic> stats = {};
+  Map<String, dynamic>? medecinProfile;
 
   final List<String> medicaments = medicamentsData;
 
@@ -32,100 +38,166 @@ class _MedecinHomeState extends State<MedecinHome> {
     "Contrôle médical si aggravation",
   ];
 
-  final List<Map<String, dynamic>> patients = [
-    {
-      "nom": "Ben Salah",
-      "prenom": "Ali",
-      "age": "32",
-      "genre": "M",
-      "telephone": "20111222",
-      "email": "ali.patient@gmail.com",
-      "dernierRdv": "2026-04-27",
-      "symptomes": "Douleur thoracique, fatigue",
-      "specialite": "Cardiologie",
-      "urgence": "MODERE",
-      "notes": [
-        {
-          "date": "2026-04-27 10:00",
-          "type": "Observation clinique",
-          "contenu": "Patient à surveiller. Consultation recommandée.",
-        }
-      ],
-      "ordonnances": [],
-    },
-    {
-      "nom": "User",
-      "prenom": "Test",
-      "age": "28",
-      "genre": "M",
-      "telephone": "20111222",
-      "email": "test@test.com",
-      "dernierRdv": "2026-04-29",
-      "symptomes": "Fièvre, toux",
-      "specialite": "Médecine générale",
-      "urgence": "FAIBLE",
-      "notes": [
-        {
-          "date": "2026-04-29 09:30",
-          "type": "Observation clinique",
-          "contenu": "Orientation indicative. Aucun signe grave déclaré.",
-        }
-      ],
-      "ordonnances": [],
-    },
-  ];
-
-  final List<Map<String, dynamic>> secretaires = [
-    {
-      "nom": "Mansouri",
-      "prenom": "Sarra",
-      "email": "sarra.secretariat@gmail.com",
-      "telephone": "22111222",
-      "actif": true,
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
-    fetchRendezVous();
+    loadAllData();
+  }
+
+  List<Map<String, dynamic>> _parseList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (raw is Map && raw['data'] is List) {
+      return (raw['data'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> loadAllData() async {
+    setState(() => isLoading = true);
+    await Future.wait([
+      fetchDashboard(),
+      fetchRendezVous(),
+      fetchDemandes(),
+      fetchPatients(),
+      fetchSecretaires(),
+      fetchProfile(),
+    ]);
+    if (mounted) setState(() => isLoading = false);
+  }
+
+  Future<void> fetchDashboard() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/medecin/dashboard"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && mounted) {
+        setState(() {
+          stats = Map<String, dynamic>.from(data['data']['stats'] ?? {});
+          if (data['data']['rendezvous_recents'] != null) {
+            final recents = _parseList(data['data']['rendezvous_recents']);
+            if (recents.isNotEmpty && rendezvous.isEmpty) {
+              rendezvous = recents;
+            }
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> fetchRendezVous() async {
-    setState(() => isLoading = true);
-
     try {
       final response = await http.get(
         Uri.parse("${AuthService.baseUrl}/rendezvous"),
-        headers: {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${AuthService.token}",
-        },
+        headers: _headers(),
       );
-
       final data = jsonDecode(response.body);
-
+      if (!mounted) return;
       setState(() {
-        if (data["data"] is Map && data["data"]["data"] != null) {
-          rendezvous = List<Map<String, dynamic>>.from(
-            data["data"]["data"].map((e) => Map<String, dynamic>.from(e)),
-          );
-        } else if (data["data"] is List) {
-          rendezvous = List<Map<String, dynamic>>.from(
-            data["data"].map((e) => Map<String, dynamic>.from(e)),
-          );
-        } else {
-          rendezvous = [];
-        }
-        isLoading = false;
+        rendezvous = _parseList(data['data']);
       });
-    } catch (e) {
-      setState(() {
-        rendezvous = [];
-        isLoading = false;
-      });
+    } catch (_) {
+      if (mounted) setState(() => rendezvous = []);
     }
   }
+
+  Future<void> fetchDemandes() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/medecin/demandes"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      setState(() {
+        demandes = _parseList(data['data']);
+      });
+    } catch (_) {
+      if (mounted) setState(() => demandes = []);
+    }
+  }
+
+  Future<void> fetchPatients() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/medecin/patients"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      setState(() {
+        patients = _parseList(data['data']).map((p) {
+          p['ordonnances'] ??= [];
+          p['notes'] ??= p['notes'] ?? [];
+          return p;
+        }).toList();
+      });
+    } catch (_) {
+      if (mounted) setState(() => patients = []);
+    }
+  }
+
+  Future<void> fetchSecretaires() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/medecin/secretaires"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      setState(() {
+        secretaires = _parseList(data['data']);
+      });
+    } catch (_) {
+      if (mounted) setState(() => secretaires = []);
+    }
+  }
+
+  Future<void> fetchProfile() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/medecin/profile"),
+        headers: _headers(),
+      );
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && mounted) {
+        final profile = Map<String, dynamic>.from(data['data'] as Map);
+        setState(() {
+          medecinProfile = profile;
+          AuthService.currentUser = {
+            ...?AuthService.currentUser,
+            ...profile,
+          };
+        });
+      }
+    } catch (e) {
+      // repli sur /me si l'endpoint dédié échoue
+      try {
+        final response = await http.get(
+          Uri.parse("${AuthService.baseUrl}/me"),
+          headers: _headers(),
+        );
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && mounted) {
+          final profile = Map<String, dynamic>.from(data['data'] as Map);
+          setState(() {
+            medecinProfile = profile;
+            AuthService.currentUser = profile;
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  Map<String, String> _headers() => {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${AuthService.token}",
+      };
 
   List<Map<String, dynamic>> get filteredRendezVous {
     return rendezvous.where((r) {
@@ -334,6 +406,9 @@ class _MedecinHomeState extends State<MedecinHome> {
     onTap: () {
       Navigator.pop(context);
       setState(() => selectedIndex = index);
+      if (index == 4) {
+        fetchProfile();
+      }
     },
   );
 }
@@ -419,8 +494,18 @@ class _MedecinHomeState extends State<MedecinHome> {
       children: [
         Row(
           children: [
-            statCard(Icons.calendar_today, "RDV", "${rendezvous.length}", Colors.blue),
-            statCard(Icons.people, "Patients", "${patients.length}", Colors.green),
+            statCard(
+              Icons.calendar_today,
+              "RDV",
+              "${stats['rendezvous'] ?? rendezvous.length}",
+              Colors.blue,
+            ),
+            statCard(
+              Icons.people,
+              "Patients",
+              "${stats['patients'] ?? patients.length}",
+              Colors.green,
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -429,10 +514,15 @@ class _MedecinHomeState extends State<MedecinHome> {
             statCard(
               Icons.warning,
               "Urgents",
-              "${patients.where((p) => p["urgence"] == "URGENT").length}",
+              "${stats['urgents'] ?? patients.where((p) => p['urgence'] == 'URGENT' || p['urgence'] == 'CRITIQUE').length}",
               Colors.red,
             ),
-            statCard(Icons.support_agent, "Secrétaires", "${secretaires.length}", Colors.orange),
+            statCard(
+              Icons.hourglass_top,
+              "En attente",
+              "${stats['demandes_en_attente'] ?? demandes.where((d) => d['statut'] == 'EN_ATTENTE').length}",
+              Colors.orange,
+            ),
           ],
         ),
         const SizedBox(height: 22),
@@ -454,7 +544,13 @@ class _MedecinHomeState extends State<MedecinHome> {
     );
   }
 
+  List<Map<String, dynamic>> get demandesEnAttente {
+    return demandes.where((d) => d['statut'] == 'EN_ATTENTE').toList();
+  }
+
   Widget rendezVousPage() {
+    final attente = demandesEnAttente;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -462,16 +558,68 @@ class _MedecinHomeState extends State<MedecinHome> {
           hint: "Rechercher par patient ou date...",
           onChanged: (v) => setState(() => rdvSearch = v),
         ),
+        if (attente.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Text(
+            "Demandes en attente",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          ...attente.map(demandeCard),
+        ],
         const SizedBox(height: 16),
+        const Text(
+          "Rendez-vous confirmés",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
         if (filteredRendezVous.isEmpty)
           emptyState(
             Icons.event_busy,
-            "Aucun rendez-vous trouvé",
-            "Les rendez-vous confirmés apparaîtront ici.",
+            "Aucun rendez-vous confirmé",
+            "Les rendez-vous confirmés par la secrétaire apparaîtront ici.",
           )
         else
           ...filteredRendezVous.map(rdvCard),
       ],
+    );
+  }
+
+  Widget demandeCard(Map<String, dynamic> d) {
+    final patient =
+        "${d['patient_prenom'] ?? ''} ${d['patient_nom'] ?? ''}".trim();
+    final urgence = d['niveau_urgence']?.toString() ?? 'FAIBLE';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: whiteCard(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CircleAvatar(
+                backgroundColor: Color(0xFFFFF3E0),
+                child: Icon(Icons.schedule, color: Colors.orange),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  patient.isEmpty ? 'Patient' : patient,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+              ),
+              badge('EN ATTENTE', Colors.orange),
+              const SizedBox(width: 6),
+              badge(urgence, urgenceColor(urgence)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          infoRow(Icons.date_range, 'Date souhaitée', '${d['date_souhaitee'] ?? '-'}'),
+          infoRow(Icons.access_time, 'Heure', '${d['heure_souhaitee'] ?? '-'}'),
+        ],
+      ),
     );
   }
 
@@ -576,7 +724,9 @@ class _MedecinHomeState extends State<MedecinHome> {
           infoRow(Icons.wc, "Genre", "${p["genre"]}"),
           infoRow(Icons.phone, "Téléphone", "${p["telephone"]}"),
           infoRow(Icons.email, "Email", "${p["email"]}"),
-          infoRow(Icons.event, "Dernier RDV", "${p["dernierRdv"]}"),
+          infoRow(Icons.event, "Dernier RDV", "${p["dernier_rdv"] ?? p["dernierRdv"] ?? "-"}"),
+          if ("${p["symptomes"] ?? ""}".isNotEmpty)
+            infoRow(Icons.healing, "Symptômes", "${p["symptomes"]}"),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -603,9 +753,18 @@ class _MedecinHomeState extends State<MedecinHome> {
   }
 
   void showConsultationDialog(String patientName) {
-    final patient = patients.firstWhere(
-      (p) => "${p["prenom"]} ${p["nom"]}" == patientName,
-      orElse: () => {
+    Map<String, dynamic> patient;
+
+    try {
+      patient = Map<String, dynamic>.from(
+        patients.firstWhere(
+          (p) =>
+              "${p['prenom'] ?? ''} ${p['nom'] ?? ''}".trim() ==
+              patientName.trim(),
+        ),
+      );
+    } catch (_) {
+      patient = {
         "prenom": "",
         "nom": patientName,
         "age": "-",
@@ -615,10 +774,13 @@ class _MedecinHomeState extends State<MedecinHome> {
         "symptomes": "Non disponibles",
         "specialite": "-",
         "urgence": "-",
-        "notes": [],
-        "ordonnances": [],
-      },
-    );
+        "notes": <Map<String, dynamic>>[],
+        "ordonnances": <Map<String, dynamic>>[],
+      };
+    }
+
+    patient["ordonnances"] ??= <Map<String, dynamic>>[];
+    patient["notes"] ??= <Map<String, dynamic>>[];
 
     showDossierMedicalDialog(patient);
   }
@@ -681,7 +843,10 @@ class _MedecinHomeState extends State<MedecinHome> {
                     children: [
                       resumeMedicalTab(patient),
                       notesMedicalesTab(patient),
-                      ordonnanceTab(patient),
+                      OrdonnanceTab(
+                        patient: patient,
+                        onOrdonnanceSaved: () => setState(() {}),
+                      ),
                     ],
                   ),
                 ),
@@ -847,286 +1012,50 @@ class _MedecinHomeState extends State<MedecinHome> {
       ),
     );
   }
-List<String> generateOrdonnanceBySymptoms(String symptomes) {
-  final s = symptomes.toLowerCase();
 
-  final List<String> suggestions = [];
-
-  if (s.contains("fièvre") || s.contains("fievre") || s.contains("température")) {
-    suggestions.addAll([
-      "Paracétamol 1000mg",
-      "Hydratation",
-      "Surveillance de la température",
-    ]);
+  double? _coord(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
   }
 
-  if (s.contains("toux") || s.contains("rhume") || s.contains("gorge")) {
-    suggestions.addAll([
-      "Sérum physiologique",
-      "Miel ou boisson chaude",
-      "Repos",
-    ]);
-  }
-
-  if (s.contains("douleur") || s.contains("mal")) {
-    suggestions.addAll([
-      "Paracétamol 1000mg",
-      "Repos",
-    ]);
-  }
-
-  if (s.contains("thoracique") || s.contains("poitrine") || s.contains("essoufflement")) {
-    suggestions.addAll([
-      "Évaluation médicale urgente",
-      "ECG recommandé",
-      "Surveillance clinique",
-    ]);
-  }
-
-  if (s.contains("diarrhée") || s.contains("diarrhee") || s.contains("vomissement")) {
-    suggestions.addAll([
-      "Smecta",
-      "Sérum de réhydratation orale",
-      "Hydratation",
-      "Régime léger",
-    ]);
-  }
-
-  if (s.contains("allergie") || s.contains("éruption") || s.contains("eruption")) {
-    suggestions.addAll([
-      "Cetirizine",
-      "Éviter l’allergène suspecté",
-      "Surveillance cutanée",
-    ]);
-  }
-
-  if (suggestions.isEmpty) {
-    suggestions.addAll([
-      "Repos",
-      "Hydratation",
-      "Contrôle médical si aggravation",
-    ]);
-  }
-
-  return suggestions.toSet().toList();
-}
-  Widget ordonnanceTab(Map<String, dynamic> patient) {
-  final searchController = TextEditingController();
-  final dosageController = TextEditingController();
-  final dureeController = TextEditingController();
-  final conseilController = TextEditingController();
-
-  List<String> aiSuggestions = generateOrdonnanceBySymptoms(
-  "${patient["symptomes"] ?? ""}",
-);
-
-  List<String> selectedItems = List.from(aiSuggestions);
-  List<String> filtered = [];
-
-  return StatefulBuilder(
-    builder: (context, setDialogState) {
-      return ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Text(
-              "Ordonnance générée automatiquement selon les symptômes déclarés. Le médecin doit vérifier, modifier et valider avant impression.",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          const Text(
-            "Proposition initiale",
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-
-          const SizedBox(height: 8),
-
-          ...selectedItems.map(
-            (item) => CheckboxListTile(
-              value: true,
-              title: Text(item),
-              onChanged: (_) {
-                setDialogState(() {
-                  selectedItems.remove(item);
-                });
-              },
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          TextField(
-            controller: searchController,
-            decoration: const InputDecoration(
-              labelText: "Ajouter un médicament",
-              hintText: "Écrire le nom du médicament...",
-              prefixIcon: Icon(Icons.search),
-            ),
-            onChanged: (value) {
-              setDialogState(() {
-                if (value.trim().isEmpty) {
-                  filtered = [];
-                } else {
-                  filtered = medicaments
-                      .where(
-                        (m) => m.toLowerCase().contains(value.toLowerCase()),
-                      )
-                      .toList();
-
-                  if (filtered.isEmpty) {
-                    filtered = [value.trim()];
-                  }
-                }
-              });
-            },
-          ),
-
-          const SizedBox(height: 10),
-
-          ...filtered.map(
-            (m) => ListTile(
-              leading: const Icon(Icons.add_circle, color: Colors.green),
-              title: Text(m),
-              onTap: () {
-                setDialogState(() {
-                  if (!selectedItems.contains(m)) {
-                    selectedItems.add(m);
-                  }
-                  searchController.clear();
-                  filtered = [];
-                });
-              },
-            ),
-          ),
-
-          const Divider(),
-
-          TextField(
-            controller: dosageController,
-            decoration: const InputDecoration(
-              labelText: "Dosage / Posologie",
-              hintText: "Ex: 1 comprimé matin et soir",
-            ),
-          ),
-
-          TextField(
-            controller: dureeController,
-            decoration: const InputDecoration(
-              labelText: "Durée",
-              hintText: "Ex: 5 jours",
-            ),
-          ),
-
-          TextField(
-            controller: conseilController,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: "Conseils complémentaires",
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          ElevatedButton.icon(
-             onPressed: () async {
-  if (selectedItems.isEmpty) return;
-
-  final ordonnance = {
-    "date": DateTime.now().toString().substring(0, 16),
-    "elements": List<String>.from(selectedItems),
-    "dosage": dosageController.text.trim(),
-    "duree": dureeController.text.trim(),
-    "conseils": conseilController.text.trim(),
-    "statut": "VALIDÉE",
-  };
-
-  setState(() {
-    patient["ordonnances"].insert(0, ordonnance);
-  });
-
-  await OrdonnancePdfService.printOrdonnance(
-    patientName: "${patient["prenom"]} ${patient["nom"]}",
-    medecinName:
-        "Dr. ${AuthService.currentUser?["prenom"] ?? ""} ${AuthService.currentUser?["nom"] ?? ""}",
-    elements: selectedItems,
-    dosage: dosageController.text.trim(),
-    duree: dureeController.text.trim(),
-    conseils: conseilController.text.trim(),
-  );
-
-  setDialogState(() {
-    selectedItems.clear();
-    dosageController.clear();
-    dureeController.clear();
-    conseilController.clear();
-  });
-
-  if (!mounted) return;
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text(
-        "Ordonnance validée. Elle sera disponible dans l’espace patient.",
-      ),
-    ),
-  );
-},
-            icon: const Icon(Icons.print),
-            label: const Text("Valider et imprimer"),
-          ),
-
-          const SizedBox(height: 20),
-
-          const Text(
-            "Ordonnances validées",
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-
-          const SizedBox(height: 8),
-
-          if ((patient["ordonnances"] as List).isEmpty)
-            const Text(
-              "Aucune ordonnance validée",
-              style: TextStyle(color: Colors.black54),
-            )
-          else
-            ...(patient["ordonnances"] as List).map(
-              (o) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(14),
-                decoration: whiteCard(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Ordonnance du ${o["date"]}",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    ...(o["elements"] as List).map((e) => Text("- $e")),
-                    if ("${o["dosage"]}".isNotEmpty)
-                      Text("Posologie : ${o["dosage"]}"),
-                    if ("${o["duree"]}".isNotEmpty)
-                      Text("Durée : ${o["duree"]}"),
-                    if ("${o["conseils"]}".isNotEmpty)
-                      Text("Conseils : ${o["conseils"]}"),
-                  ],
-                ),
-              ),
-            ),
-        ],
+  Widget _cabinetMapSection(Map<String, dynamic> user) {
+    final lat = _coord(user['latitude']);
+    final lng = _coord(user['longitude']);
+    if (lat == null || lng == null) {
+      return Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text(
+          "Carte non disponible : modifiez votre profil pour placer le cabinet sur la carte.",
+          style: TextStyle(fontSize: 12),
+        ),
       );
-    },
-  );
-}
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        const Text(
+          'Localisation du cabinet',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 10),
+        LocationMapView(
+          latitude: lat,
+          longitude: lng,
+          height: 220,
+          markerLabel: user['adresse_cabinet']?.toString(),
+        ),
+      ],
+    );
+  }
+
   Widget secretairePage() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1137,11 +1066,18 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
           child: ElevatedButton.icon(
             onPressed: showAddSecretaireDialog,
             icon: const Icon(Icons.person_add),
-            label: const Text("Ajouter secrétaire"),
+            label: const Text('Ajouter une secrétaire'),
           ),
         ),
         const SizedBox(height: 16),
-        ...secretaires.map(secretaireCard),
+        if (secretaires.isEmpty)
+          emptyState(
+            Icons.support_agent,
+            "Aucune secrétaire",
+            "Les comptes secrétaire enregistrés dans le système apparaîtront ici.",
+          )
+        else
+          ...secretaires.map(secretaireCard),
       ],
     );
   }
@@ -1203,39 +1139,139 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
     final prenom = TextEditingController();
     final email = TextEditingController();
     final telephone = TextEditingController();
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Ajouter secrétaire"),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(controller: nom, decoration: const InputDecoration(labelText: "Nom")),
-              TextField(controller: prenom, decoration: const InputDecoration(labelText: "Prénom")),
-              TextField(controller: email, decoration: const InputDecoration(labelText: "Email")),
-              TextField(controller: telephone, decoration: const InputDecoration(labelText: "Téléphone")),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Ajouter une secrétaire'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Un mot de passe sera généré et envoyé par email.',
+                  style: TextStyle(color: Colors.black54, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nom,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: prenom,
+                  decoration: const InputDecoration(
+                    labelText: 'Prénom *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: telephone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Téléphone',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (nom.text.trim().isEmpty ||
+                          prenom.text.trim().isEmpty ||
+                          email.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Nom, prénom et email sont obligatoires'),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => saving = true);
+
+                      try {
+                        final response = await http.post(
+                          Uri.parse('${AuthService.baseUrl}/medecin/secretaires'),
+                          headers: {
+                            ..._headers(),
+                            'Content-Type': 'application/json',
+                          },
+                          body: jsonEncode({
+                            'nom': nom.text.trim(),
+                            'prenom': prenom.text.trim(),
+                            'email': email.text.trim(),
+                            'telephone': telephone.text.trim(),
+                          }),
+                        );
+
+                        final data = jsonDecode(response.body);
+
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+
+                        if (data['success'] == true) {
+                          await fetchSecretaires();
+                          if (mounted) setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                data['message']?.toString() ??
+                                    'Secrétaire créée',
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                data['message']?.toString() ?? 'Erreur',
+                              ),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Créer et envoyer email'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                secretaires.insert(0, {
-                  "nom": nom.text,
-                  "prenom": prenom.text,
-                  "email": email.text,
-                  "telephone": telephone.text,
-                  "actif": true,
-                });
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Ajouter"),
-          ),
-        ],
       ),
     );
   }
@@ -1280,7 +1316,9 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
   }
 
   Widget profilPage() {
-    final user = AuthService.currentUser ?? {};
+    final user = medecinProfile ?? AuthService.currentUser ?? {};
+    final adresse = user['adresse_cabinet']?.toString().trim() ?? '';
+    final ville = user['ville']?.toString().trim() ?? '';
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1299,19 +1337,39 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
                 "Dr. ${user["prenom"] ?? ""} ${user["nom"] ?? ""}",
                 style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
               ),
-              const Text("MEDECIN", style: TextStyle(color: Colors.black54)),
+              Text(
+                user["specialite"]?.toString() ?? "Médecin",
+                style: const TextStyle(color: Colors.black54),
+              ),
             ],
           ),
         ),
         const SizedBox(height: 16),
         infoTile(Icons.email, "Email", "${user["email"] ?? "-"}"),
         infoTile(Icons.phone, "Téléphone", "${user["telephone"] ?? "-"}"),
+        infoTile(Icons.medical_services, "Spécialité", "${user["specialite"] ?? "-"}"),
+        infoTile(Icons.location_city, "Ville", ville.isEmpty ? "-" : ville),
+        infoTile(Icons.location_on, "Adresse du cabinet", adresse.isEmpty ? "-" : adresse),
         infoTile(Icons.verified_user, "Rôle", "${user["role"] ?? "MEDECIN"}"),
+        _cabinetMapSection(user),
         const SizedBox(height: 18),
         SizedBox(
           height: 50,
           child: ElevatedButton.icon(
-            onPressed: showEditProfileDialog,
+            onPressed: () async {
+              final updated = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ModifierProfilMedecinScreen(
+                    user: Map<String, dynamic>.from(user),
+                  ),
+                ),
+              );
+              if (updated == true) {
+                await fetchProfile();
+                if (mounted) setState(() {});
+              }
+            },
             icon: const Icon(Icons.edit),
             label: const Text("Modifier mes informations"),
           ),
@@ -1355,72 +1413,143 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
     );
   }
 
-  void showEditProfileDialog() {
-    final nom = TextEditingController(text: "${AuthService.currentUser?["nom"] ?? ""}");
-    final prenom = TextEditingController(text: "${AuthService.currentUser?["prenom"] ?? ""}");
-    final email = TextEditingController(text: "${AuthService.currentUser?["email"] ?? ""}");
-    final tel = TextEditingController(text: "${AuthService.currentUser?["telephone"] ?? ""}");
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Modifier profil"),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(controller: nom, decoration: const InputDecoration(labelText: "Nom")),
-              TextField(controller: prenom, decoration: const InputDecoration(labelText: "Prénom")),
-              TextField(controller: email, decoration: const InputDecoration(labelText: "Email")),
-              TextField(controller: tel, decoration: const InputDecoration(labelText: "Téléphone")),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                AuthService.currentUser?["nom"] = nom.text;
-                AuthService.currentUser?["prenom"] = prenom.text;
-                AuthService.currentUser?["email"] = email.text;
-                AuthService.currentUser?["telephone"] = tel.text;
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Enregistrer"),
-          ),
-        ],
-      ),
-    );
-  }
-
   void showChangePasswordDialog() {
     final oldPass = TextEditingController();
     final newPass = TextEditingController();
+    final confirmPass = TextEditingController();
+    var obscureOld = true;
+    var obscureNew = true;
+    var obscureConfirm = true;
+    var saving = false;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Changer mot de passe"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: oldPass, obscureText: true, decoration: const InputDecoration(labelText: "Ancien mot de passe")),
-            TextField(controller: newPass, obscureText: true, decoration: const InputDecoration(labelText: "Nouveau mot de passe")),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Changer mot de passe'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: oldPass,
+                  obscureText: obscureOld,
+                  decoration: InputDecoration(
+                    labelText: 'Ancien mot de passe *',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureOld ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setDialogState(() => obscureOld = !obscureOld),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newPass,
+                  obscureText: obscureNew,
+                  decoration: InputDecoration(
+                    labelText: 'Nouveau mot de passe * (min. 6)',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureNew ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setDialogState(() => obscureNew = !obscureNew),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmPass,
+                  obscureText: obscureConfirm,
+                  decoration: InputDecoration(
+                    labelText: 'Confirmer le nouveau mot de passe *',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setDialogState(() => obscureConfirm = !obscureConfirm),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (oldPass.text.isEmpty ||
+                          newPass.text.isEmpty ||
+                          confirmPass.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Tous les champs sont obligatoires'),
+                          ),
+                        );
+                        return;
+                      }
+                      if (newPass.text.length < 6) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Le nouveau mot de passe doit contenir au moins 6 caractères'),
+                          ),
+                        );
+                        return;
+                      }
+                      if (newPass.text != confirmPass.text) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Les mots de passe ne correspondent pas'),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => saving = true);
+
+                      try {
+                        final result = await PasswordService.changePassword(
+                          ancienMotDePasse: oldPass.text,
+                          nouveauMotDePasse: newPass.text,
+                        );
+
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              result['success'] == true
+                                  ? result['message'] as String
+                                  : PasswordService.formatErrors(
+                                      result['errors'],
+                                      result['message'] as String,
+                                    ),
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Valider'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Mot de passe modifié localement pour la démonstration.")),
-              );
-            },
-            child: const Text("Valider"),
-          ),
-        ],
       ),
     );
   }
@@ -1467,7 +1596,7 @@ List<String> generateOrdonnanceBySymptoms(String symptomes) {
       appBar: AppBar(
         title: const Text("Espace Médecin"),
         actions: [
-          IconButton(onPressed: fetchRendezVous, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: loadAllData, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: Column(

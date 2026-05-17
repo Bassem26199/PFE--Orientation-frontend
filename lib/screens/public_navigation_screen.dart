@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/auth_service.dart';
 import 'welcome_screen.dart';
 import 'analyser_symptomes_screen.dart';
 import 'login_screen.dart';
@@ -15,12 +16,12 @@ class PublicNavigationScreen extends StatefulWidget {
 class _PublicNavigationScreenState extends State<PublicNavigationScreen> {
   int currentIndex = 0;
 
-  late final List<Widget> pages = [
-    const WelcomeScreen(),
-    const PublicDoctorsPage(),
-    const AnalyserSymptomesScreen(),
-    const PublicAvisPage(),
-  ];
+  List<Widget> get pages => [
+        WelcomeScreen(key: ValueKey('welcome_${AuthService.isLoggedIn}')),
+        const PublicDoctorsPage(),
+        const AnalyserSymptomesScreen(),
+        const PublicAvisPage(),
+      ];
 
   @override
   Widget build(BuildContext context) {

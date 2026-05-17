@@ -49,8 +49,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     },
   ];
 
-void goToLogin() {
-  if (AuthService.isLoggedIn) {
+  void goToLogin() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void goToRegisterInfo() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+  }
+
+  void goToUserSpace() {
     final role = AuthService.currentUser?["role"];
 
     if (role == "PATIENT") {
@@ -78,17 +93,25 @@ void goToLogin() {
     }
   }
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const LoginScreen()),
-  );
-}
-
-  void goToRegisterInfo() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+  Future<void> logout() async {
+    await AuthService.logout();
+    if (mounted) setState(() {});
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Déconnexion réussie")),
     );
+  }
+
+  String get _spaceLabel {
+    final role = AuthService.currentUser?["role"];
+    switch (role) {
+      case "MEDECIN":
+        return "Espace médecin";
+      case "SECRETAIRE":
+        return "Espace secrétaire";
+      default:
+        return "Espace patient";
+    }
   }
 
   Future<void> openEmergencyInfo() async {
@@ -279,59 +302,74 @@ void goToLogin() {
 
                       Column(
                         children: [
-                    Row(
-  children: [
-    Expanded(
-      child: SizedBox(
-        height: 58, // 👈 أكبر قليلاً
-        child: ElevatedButton.icon(
-          icon: const Icon(Icons.health_and_safety, size: 22),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const AnalyserSymptomesScreen(),
-              ),
-            );
-          },
-          label: const Text(
-            "Analyser",
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
-          ),
-        ),
-      ),
-    ),
-    const SizedBox(width: 10),
-    Expanded(
-      child: SizedBox(
-        height: 58, // 👈 نفس الحجم
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.blue,
-            padding: const EdgeInsets.symmetric(horizontal: 18), // 👈 مهم جداً
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          icon: const Icon(Icons.login, size: 22),
-          onPressed: goToLogin,
-          label: const Text(
-            "Se connecter",
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
-          ),
-        ),
-      ),
-    ),
-  ],
-),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 58,
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(
+                                      Icons.health_and_safety,
+                                      size: 22,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const AnalyserSymptomesScreen(),
+                                        ),
+                                      );
+                                    },
+                                    label: const Text(
+                                      "Analyser",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 58,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.blue,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 18,
+                                      ),
+                                      elevation: 2,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                    icon: Icon(
+                                      AuthService.isLoggedIn
+                                          ? Icons.space_dashboard_outlined
+                                          : Icons.login,
+                                      size: 22,
+                                    ),
+                                    onPressed: AuthService.isLoggedIn
+                                        ? goToUserSpace
+                                        : goToLogin,
+                                    label: Text(
+                                      AuthService.isLoggedIn
+                                          ? _spaceLabel
+                                          : "Se connecter",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
@@ -347,11 +385,21 @@ void goToLogin() {
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
-                              onPressed: goToRegisterInfo,
-                              icon: const Icon(Icons.person_add_alt_1),
-                              label: const Text(
-                                "Créer un compte patient",
-                                style: TextStyle(fontWeight: FontWeight.w600),
+                              onPressed: AuthService.isLoggedIn
+                                  ? logout
+                                  : goToRegisterInfo,
+                              icon: Icon(
+                                AuthService.isLoggedIn
+                                    ? Icons.logout
+                                    : Icons.person_add_alt_1,
+                              ),
+                              label: Text(
+                                AuthService.isLoggedIn
+                                    ? "Se déconnecter"
+                                    : "Créer un compte patient",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
