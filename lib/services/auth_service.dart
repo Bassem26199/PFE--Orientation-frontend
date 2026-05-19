@@ -26,6 +26,31 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    try {
+      final health = await http
+          .get(Uri.parse("$baseUrl/health"))
+          .timeout(const Duration(seconds: 5));
+
+      if (health.statusCode != 200) {
+        return _serverUnavailableMessage(
+          'Le serveur sur $baseUrl ne répond pas correctement.',
+        );
+      }
+
+      final healthData = jsonDecode(health.body) as Map<String, dynamic>;
+      if (healthData['service'] != 'orientation-medical-api') {
+        return _serverUnavailableMessage(
+          'Mauvais serveur détecté sur le port ${ApiConfig.port}. '
+          'Lancez Laravel depuis PFE--Orientation-medical.',
+        );
+      }
+    } catch (_) {
+      return _serverUnavailableMessage(
+        'Impossible de joindre l\'API ($baseUrl). '
+        'Exécutez: .\\scripts\\start-api.ps1 dans PFE--Orientation-medical',
+      );
+    }
+
     final response = await http.post(
       Uri.parse("$baseUrl/login"),
       headers: {
@@ -33,12 +58,35 @@ class AuthService {
         "Content-Type": "application/json",
       },
       body: jsonEncode({
-  "email": email,
-  "mot_de_passe": password,
-}),
+        "email": email,
+        "mot_de_passe": password,
+      }),
     );
 
-    final data = jsonDecode(response.body);
+    Map<String, dynamic> data;
+    try {
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {
+        "status": response.statusCode,
+        "success": false,
+        "message": response.statusCode == 404
+            ? "Route API introuvable. Redémarrez le serveur Laravel (scripts/start-api.ps1)."
+            : "Réponse serveur invalide (${response.statusCode}).",
+        "data": null,
+      };
+    }
+
+    if (response.statusCode == 404) {
+      return {
+        "status": 404,
+        "success": false,
+        "message":
+            "Route /api/login introuvable. Démarrez l'API depuis PFE--Orientation-medical "
+            "(pas un autre projet sur le port ${ApiConfig.port}).",
+        "data": data,
+      };
+    }
 
     if ((response.statusCode == 200 || response.statusCode == 201) &&
         data["success"] == true) {
@@ -58,6 +106,15 @@ class AuthService {
     };
   }
 
+  static Map<String, dynamic> _serverUnavailableMessage(String message) {
+    return {
+      "status": 0,
+      "success": false,
+      "message": message,
+      "data": null,
+    };
+  }
+
   static Future<void> logout() async {
     token = null;
     currentUser = null;
@@ -68,6 +125,12 @@ class AuthService {
   }
 
   static bool get isLoggedIn => token != null;
+
+  static String? get role =>
+      currentUser?['role']?.toString().toUpperCase();
+
+  static bool get isPatient =>
+      isLoggedIn && role == 'PATIENT';
 
   static String get displayName {
     final user = currentUser;

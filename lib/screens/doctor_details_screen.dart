@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/nominatim_service.dart';
 import '../widgets/location_map_view.dart';
 import '../widgets/patient_doctor_route_map.dart';
+import '../widgets/doctor_reviews_section.dart';
 import 'create_rendezvous_screen.dart';
 
 class DoctorDetailsScreen extends StatefulWidget {
@@ -335,6 +336,14 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
             infoTile(Icons.location_on, "Adresse du cabinet", adresse),
             infoTile(Icons.phone, "Téléphone", telephone),
             infoTile(Icons.star, "Note moyenne", note),
+            const SizedBox(height: 20),
+            if (int.tryParse(widget.doctor['id_medecin']?.toString() ?? '') !=
+                null)
+              DoctorReviewsSection(
+                idMedecin:
+                    int.parse(widget.doctor['id_medecin'].toString()),
+                medecinLabel: nom,
+              ),
             const SizedBox(height: 12),
             Row(
               children: [

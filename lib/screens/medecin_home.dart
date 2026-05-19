@@ -683,7 +683,7 @@ class _MedecinHomeState extends State<MedecinHome> {
           emptyState(
             Icons.people,
             "Aucun patient trouvé",
-            "Les patients suivis apparaîtront ici.",
+            "Un patient apparaît ici uniquement après confirmation de son rendez-vous.",
           )
         else
           ...filteredPatients.map(patientCard),
@@ -1268,7 +1268,7 @@ class _MedecinHomeState extends State<MedecinHome> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Créer et envoyer email'),
+                  : const Text('Confirmer'),
             ),
           ],
         ),

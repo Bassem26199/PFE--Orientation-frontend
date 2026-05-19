@@ -197,8 +197,20 @@ class _SecretaireHomeState extends State<SecretaireHome> {
       if (!mounted) return;
 
       if (response.statusCode == 200 && data["success"] == true) {
+        final payload = data["data"];
+        String message = data["message"]?.toString() ?? "Action effectuée";
+        if (payload is Map) {
+          if (action == "CONFIRMER" && payload["email_confirmation_envoye"] == false) {
+            message =
+                "$message\n(Aucun email envoyé : vérifiez l'adresse email du patient et les spams.)";
+          }
+          if (action == "REFUSER" && payload["email_refus_envoye"] == false) {
+            message =
+                "$message\n(Aucun email de refus envoyé : vérifiez l'adresse email du patient.)";
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"] ?? "Action effectuée")),
+          SnackBar(content: Text(message)),
         );
         loadAllData();
       } else {
@@ -637,14 +649,6 @@ Widget appDrawer() {
                     label: const Text("Modifier"),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => addPatientFromRdv(demande),
-                    icon: const Icon(Icons.person_add),
-                    label: const Text("Patient"),
-                  ),
-                ),
               ],
             ),
             if (isPending) ...[
@@ -684,39 +688,6 @@ Widget appDrawer() {
           ],
         ],
       ),
-    );
-  }
-
-  void addPatientFromRdv(Map<String, dynamic> demande) {
-    final prenom = "${demande["patient_prenom"] ?? ""}";
-    final nom = "${demande["patient_nom"] ?? ""}";
-
-    final exists = patients.any((p) =>
-        "${p["prenom"]}".toLowerCase() == prenom.toLowerCase() &&
-        "${p["nom"]}".toLowerCase() == nom.toLowerCase());
-
-    if (exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Patient déjà présent dans la liste")),
-      );
-      return;
-    }
-
-    setState(() {
-      patients.insert(0, {
-        "nom": nom.isEmpty ? "Non défini" : nom,
-        "prenom": prenom.isEmpty ? "Patient" : prenom,
-        "email": "non.defini@email.com",
-        "telephone": "-",
-        "genre": "-",
-        "age": "-",
-        "dernierRdv": demande["date_souhaitee"] ?? "-",
-        "prochainRdv": "-",
-      });
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Patient ajouté à la liste")),
     );
   }
 
@@ -817,7 +788,11 @@ Widget appDrawer() {
         ),
         const SizedBox(height: 16),
         if (filteredPatients.isEmpty)
-          emptyState(Icons.people, "Aucun patient trouvé", "La liste des patients apparaîtra ici.")
+          emptyState(
+            Icons.people,
+            "Aucun patient suivi",
+            "Les patients apparaissent ici seulement après confirmation du rendez-vous.",
+          )
         else
           ...filteredPatients.map(patientCard),
       ],
@@ -828,7 +803,7 @@ Widget appDrawer() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Les patients sont ajoutés via l\'orientation médicale et les demandes de RDV.',
+          'Les patients sont suivis uniquement après confirmation du rendez-vous par le secrétariat.',
         ),
       ),
     );

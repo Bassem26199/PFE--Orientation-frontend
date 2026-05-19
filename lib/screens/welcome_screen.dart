@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'medecin_home.dart';
 import '../services/auth_service.dart';
+import '../services/medecin_service.dart';
+import '../widgets/doctors_map_view.dart';
 import 'patient_home.dart';
 import 'secretaire_home.dart';
 import 'register_screen.dart';
@@ -15,6 +17,32 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
+  List<Map<String, dynamic>> mapDoctors = [];
+  bool mapLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMapDoctors();
+  }
+
+  Future<void> _loadMapDoctors() async {
+    setState(() => mapLoading = true);
+    try {
+      final list = await MedecinService.fetchMedecins();
+      if (mounted) {
+        setState(() {
+          mapDoctors = list;
+          mapLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => mapLoading = false);
+      }
+    }
+  }
+
   final List<Map<String, dynamic>> posts = [
     {
       "titre": "Quand consulter rapidement ?",
@@ -203,50 +231,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Widget mapPreview() {
-    return Container(
-      height: 260,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade100, Colors.green.shade100],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    if (mapLoading) {
+      return Container(
+        height: 260,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(26),
         ),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: MapLinesPainter())),
-          Positioned(top: 30, left: 30, child: mapPin("Tunis", Colors.red)),
-          Positioned(
-            top: 95,
-            right: 40,
-            child: mapPin("Tunis Nord", Colors.blue),
-          ),
-          Positioned(
-            bottom: 45,
-            left: 80,
-            child: mapPin("Sfax", Colors.green),
-          ),
-        ],
-      ),
-    );
-  }
+        child: const CircularProgressIndicator(),
+      );
+    }
 
-  Widget mapPin(String label, Color color) {
-    return Column(
-      children: [
-        Icon(Icons.location_pin, color: color, size: 42),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(label, style: const TextStyle(fontSize: 12)),
-        ),
-      ],
-    );
+    return DoctorsMapView(doctors: mapDoctors, height: 260);
   }
 
   @override
@@ -470,10 +467,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
-              const Text(
-                "Visualisation simplifiée des localisations médicales.",
-                style: TextStyle(color: Colors.black54),
-              ),
+              
               const SizedBox(height: 14),
               mapPreview(),
 
@@ -500,53 +494,4 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       ),
     );
   }
-}
-
-class MapLinesPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final roadPaint = Paint()
-      ..color = Colors.white.withOpacity(0.65)
-      ..strokeWidth = 5
-      ..style = PaintingStyle.stroke;
-
-    final roadPaint2 = Paint()
-      ..color = Colors.white.withOpacity(0.35)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-
-    final path1 = Path()
-      ..moveTo(0, size.height * 0.25)
-      ..quadraticBezierTo(
-        size.width * 0.45,
-        size.height * 0.05,
-        size.width,
-        size.height * 0.35,
-      );
-
-    final path2 = Path()
-      ..moveTo(size.width * 0.1, size.height)
-      ..quadraticBezierTo(
-        size.width * 0.35,
-        size.height * 0.55,
-        size.width * 0.9,
-        0,
-      );
-
-    final path3 = Path()
-      ..moveTo(0, size.height * 0.75)
-      ..quadraticBezierTo(
-        size.width * 0.55,
-        size.height * 0.55,
-        size.width,
-        size.height * 0.78,
-      );
-
-    canvas.drawPath(path1, roadPaint);
-    canvas.drawPath(path2, roadPaint2);
-    canvas.drawPath(path3, roadPaint2);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -3,6 +3,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 class OrdonnancePdfService {
+  static String _pdfText(String? value) {
+    return (value ?? '')
+        .replaceAll('\u2022', '-')
+        .replaceAll('\u2019', "'")
+        .replaceAll('\u2018', "'")
+        .replaceAll('\u2014', '-');
+  }
+
   static const PdfColor _primary = PdfColor.fromInt(0xFF1565C0);
   static const PdfColor _primaryLight = PdfColor.fromInt(0xFFE3F2FD);
   static const PdfColor _accent = PdfColor.fromInt(0xFF00897B);
@@ -21,12 +29,16 @@ class OrdonnancePdfService {
   }) async {
     final pdf = pw.Document();
     final dateStr = DateTime.now().toString().substring(0, 10);
-    final medicaments = elements
-        .where((e) => e is Map && (e['type'] ?? 'MEDICAMENT') != 'CONSEIL')
-        .toList();
-    final conseilsList = elements
-        .where((e) => e is Map && (e['type'] ?? '') == 'CONSEIL')
-        .toList();
+    final medicaments = _dedupeByLibelle(
+      elements
+          .where((e) => e is Map && (e['type'] ?? 'MEDICAMENT') != 'CONSEIL')
+          .toList(),
+    );
+    final conseilsList = _dedupeByLibelle(
+      elements
+          .where((e) => e is Map && (e['type'] ?? '') == 'CONSEIL')
+          .toList(),
+    );
 
     pdf.addPage(
       pw.Page(
@@ -38,7 +50,7 @@ class OrdonnancePdfService {
             children: [
               _header(medecinName, specialite, dateStr),
               pw.SizedBox(height: 20),
-              _infoBoxes(patientName, niveauUrgence, symptomes),
+              _infoBoxes(patientName, symptomes),
               pw.SizedBox(height: 18),
               pw.Text(
                 'PRESCRIPTION',
@@ -72,7 +84,9 @@ class OrdonnancePdfService {
                         pw.Text('- ', style: const pw.TextStyle(color: _accent)),
                         pw.Expanded(
                           child: pw.Text(
-                            '${m['libelle']}${(m['posologie'] ?? '').toString().isNotEmpty ? ' - ${m['posologie']}' : ''}',
+                            _pdfText(
+                              '${m['libelle']}${(m['posologie'] ?? '').toString().isNotEmpty ? ' - ${m['posologie']}' : ''}',
+                            ),
                             style: const pw.TextStyle(fontSize: 10),
                           ),
                         ),
@@ -96,6 +110,19 @@ class OrdonnancePdfService {
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
+  static List<dynamic> _dedupeByLibelle(List<dynamic> items) {
+    final seen = <String>{};
+    final result = <dynamic>[];
+    for (final e in items) {
+      if (e is! Map) continue;
+      final key = (e['libelle'] ?? '').toString().toLowerCase().trim();
+      if (key.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      result.add(e);
+    }
+    return result;
+  }
+
   static pw.Widget _header(String medecinName, String? specialite, String date) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(16),
@@ -106,25 +133,6 @@ class OrdonnancePdfService {
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Container(
-            width: 44,
-            height: 44,
-            decoration: pw.BoxDecoration(
-              color: PdfColors.white,
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Center(
-              child: pw.Text(
-                'OM',
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
-                  color: _primary,
-                ),
-              ),
-            ),
-          ),
-          pw.SizedBox(width: 14),
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -176,68 +184,33 @@ class OrdonnancePdfService {
     );
   }
 
-  static pw.Widget _infoBoxes(
-    String patientName,
-    String? urgence,
-    List<String>? symptomes,
-  ) {
-    return pw.Row(
-      children: [
-        pw.Expanded(
-          child: pw.Container(
-            padding: const pw.EdgeInsets.all(12),
-            decoration: pw.BoxDecoration(
-              color: _primaryLight,
-              borderRadius: pw.BorderRadius.circular(8),
-              border: pw.Border.all(color: PdfColor.fromInt(0xFF90CAF9), width: 0.5),
-            ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text('PATIENT', style: _labelStyle()),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  patientName,
-                  style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-                ),
-                if (symptomes != null && symptomes.isNotEmpty) ...[
-                  pw.SizedBox(height: 6),
-                  pw.Text('Symptômes : ${symptomes.join(', ')}', style: _smallStyle()),
-                ],
-              ],
-            ),
+  static pw.Widget _infoBoxes(String patientName, List<String>? symptomes) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: _primaryLight,
+        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: PdfColor.fromInt(0xFF90CAF9), width: 0.5),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('PATIENT', style: _labelStyle()),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            _pdfText(patientName),
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
           ),
-        ),
-        if (urgence != null && urgence.isNotEmpty) ...[
-          pw.SizedBox(width: 10),
-          pw.Container(
-            width: 100,
-            padding: const pw.EdgeInsets.all(12),
-            decoration: pw.BoxDecoration(
-              color: urgence == 'URGENT'
-                  ? const PdfColor.fromInt(0xFFFFEBEE)
-                  : const PdfColor.fromInt(0xFFF3E5F5),
-              borderRadius: pw.BorderRadius.circular(8),
+          if (symptomes != null && symptomes.isNotEmpty) ...[
+            pw.SizedBox(height: 6),
+            pw.Text(
+              _pdfText('Symptomes : ${symptomes.join(', ')}'),
+              style: _smallStyle(),
             ),
-            child: pw.Column(
-              children: [
-                pw.Text('URGENCE', style: _labelStyle()),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  urgence,
-                  style: pw.TextStyle(
-                    fontSize: 11,
-                    fontWeight: pw.FontWeight.bold,
-                    color: urgence == 'URGENT'
-                        ? const PdfColor.fromInt(0xFFC62828)
-                        : _textMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -260,8 +233,8 @@ class OrdonnancePdfService {
           final m = e as Map;
           return pw.TableRow(
             children: [
-              _tableCell('${m['libelle'] ?? ''}'),
-              _tableCell('${m['posologie'] ?? 'Selon avis médical'}'),
+              _tableCell(_pdfText('${m['libelle'] ?? ''}')),
+              _tableCell(_pdfText('${m['posologie'] ?? 'Selon avis medical'}')),
             ],
           );
         }),
@@ -293,11 +266,11 @@ class OrdonnancePdfService {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           if (dosage.isNotEmpty)
-            pw.Text('Posologie générale : $dosage', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('Posologie generale : ${_pdfText(dosage)}', style: const pw.TextStyle(fontSize: 9)),
           if (duree.isNotEmpty)
-            pw.Text('Durée : $duree', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('Duree : ${_pdfText(duree)}', style: const pw.TextStyle(fontSize: 9)),
           if (conseils.isNotEmpty)
-            pw.Text('Notes : $conseils', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('Notes : ${_pdfText(conseils)}', style: const pw.TextStyle(fontSize: 9)),
         ],
       ),
     );

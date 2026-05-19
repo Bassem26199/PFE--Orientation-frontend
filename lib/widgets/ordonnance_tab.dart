@@ -196,6 +196,10 @@ class _OrdonnanceTabState extends State<OrdonnanceTab> {
     final urgence = _proposal?['niveau_urgence']?.toString() ?? '';
     final symptomes = (_proposal?['symptomes'] as List?)?.join(', ') ?? '';
     final specialite = _proposal?['specialite']?.toString();
+    final source = _proposal?['source']?.toString() ?? 'rules';
+    final analyseIa = _proposal?['analyse_ia']?.toString();
+    final geminiMessage = _proposal?['gemini_message']?.toString();
+    final isGemini = source == 'gemini';
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -241,6 +245,42 @@ class _OrdonnanceTabState extends State<OrdonnanceTab> {
                 const SizedBox(height: 4),
                 Text('Spécialité : $specialite',
                     style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isGemini
+                      ? 'Source : Gemini IA'
+                      : 'Source : moteur de regles',
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                ),
+              ),
+              if (!isGemini &&
+                  geminiMessage != null &&
+                  geminiMessage.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  geminiMessage,
+                  style: TextStyle(
+                    color: Colors.amber.shade100,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+              if (analyseIa != null && analyseIa.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  analyseIa,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.95),
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ],
           ),
@@ -434,7 +474,7 @@ class _OrdonnanceTabState extends State<OrdonnanceTab> {
               final m = e as Map;
               final pos = '${m['posologie'] ?? ''}';
               return Text(
-                '• ${m['libelle']}${pos.isNotEmpty ? ' — $pos' : ''}',
+                '- ${m['libelle']}${pos.isNotEmpty ? ' - $pos' : ''}',
               );
             }),
           ],
