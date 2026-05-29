@@ -6,15 +6,17 @@ import '../services/auth_service.dart';
 import 'doctor_details_screen.dart';
 
 class DoctorsBySpecialiteScreen extends StatefulWidget {
-  final int idSpecialite;
+  final int? idSpecialite;
   final String nomSpecialite;
   final int idOrientation;
+  final bool specialiteDisponible;
 
   const DoctorsBySpecialiteScreen({
     super.key,
     required this.idSpecialite,
     required this.nomSpecialite,
     required this.idOrientation,
+    this.specialiteDisponible = true,
   });
 
   @override
@@ -28,10 +30,19 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
   double? patientLat;
   double? patientLng;
 
+  bool get _canListDoctors =>
+      widget.specialiteDisponible &&
+      widget.idSpecialite != null &&
+      widget.idSpecialite! > 0;
+
   @override
   void initState() {
     super.initState();
-    _loadDoctors();
+    if (_canListDoctors) {
+      _loadDoctors();
+    } else {
+      isLoading = false;
+    }
   }
 
   double? _parseCoord(dynamic value) {
@@ -60,6 +71,11 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
   }
 
   Future<void> _loadDoctors() async {
+    if (!_canListDoctors) {
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
+
     setState(() => isLoading = true);
     await _loadPatientLocation();
 
@@ -109,7 +125,9 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
     final adresse = doctor['adresse_cabinet']?.toString() ?? '';
     final ville = doctor['ville']?.toString() ?? '-';
     final distance = doctor['distance_km'];
-    final distanceLabel = distance != null ? " • ${distance} km" : "";
+    final distanceLabel = distance != null
+        ? " • ${distance is num ? (distance as num).toStringAsFixed(1) : distance} km (direct)"
+        : "";
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -169,13 +187,48 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
     );
   }
 
+  Widget _specialiteIndisponibleView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.info_outline, size: 56, color: Colors.orange.shade700),
+            const SizedBox(height: 16),
+            Text(
+              widget.nomSpecialite,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              "Cette spécialité n'existe pas encore sur notre plateforme.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              "Notre équipe travaille à l'ajout de nouveaux cabinets. "
+              "Revenez ultérieurement ou consultez une autre spécialité disponible.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black54, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text("Médecins - ${widget.nomSpecialite}"),
       ),
-      body: isLoading
+      body: !_canListDoctors
+          ? _specialiteIndisponibleView()
+          : isLoading
           ? const Center(child: CircularProgressIndicator())
           : doctors.isEmpty
               ? Center(

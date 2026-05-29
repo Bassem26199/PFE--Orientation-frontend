@@ -21,6 +21,7 @@ class _MedecinHomeState extends State<MedecinHome> {
 
   String rdvSearch = "";
   String patientSearch = "";
+  String patientUrgenceFilter = "TOUS";
 
   List<Map<String, dynamic>> rendezvous = [];
   List<Map<String, dynamic>> demandes = [];
@@ -211,6 +212,13 @@ class _MedecinHomeState extends State<MedecinHome> {
 
   List<Map<String, dynamic>> get filteredPatients {
     return patients.where((p) {
+      final urgence = "${p["urgence"]}";
+      if (patientUrgenceFilter == "URGENT") {
+        if (urgence != "URGENT" && urgence != "CRITIQUE") {
+          return false;
+        }
+      }
+
       final text =
           "${p["nom"]} ${p["prenom"]} ${p["email"]} ${p["telephone"]}"
               .toLowerCase();
@@ -391,27 +399,50 @@ class _MedecinHomeState extends State<MedecinHome> {
     ),
   );
 }
-  Widget drawerItem(int index, IconData icon, String title) {
-  final active = selectedIndex == index;
-
-  return ListTile(
-    leading: Icon(icon, color: active ? Colors.blue : Colors.blueGrey),
-    title: Text(
-      title,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: active ? Colors.blue : Colors.black87,
-      ),
-    ),
-    onTap: () {
-      Navigator.pop(context);
-      setState(() => selectedIndex = index);
-      if (index == 4) {
-        fetchProfile();
+  void navigateToTab(
+    int index, {
+    String? patientUrgence,
+    String? rdvSearchQuery,
+  }) {
+    setState(() {
+      selectedIndex = index;
+      if (index == 1) {
+        if (rdvSearchQuery != null) {
+          rdvSearch = rdvSearchQuery;
+        } else {
+          rdvSearch = '';
+        }
       }
-    },
-  );
-}
+      if (index == 2) {
+        patientUrgenceFilter = patientUrgence ?? 'TOUS';
+        if (patientUrgence != null) {
+          patientSearch = '';
+        }
+      }
+    });
+    if (index == 4) {
+      fetchProfile();
+    }
+  }
+
+  Widget drawerItem(int index, IconData icon, String title) {
+    final active = selectedIndex == index;
+
+    return ListTile(
+      leading: Icon(icon, color: active ? Colors.blue : Colors.blueGrey),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: active ? Colors.blue : Colors.black87,
+        ),
+      ),
+      onTap: () {
+        Navigator.pop(context);
+        navigateToTab(index);
+      },
+    );
+  }
 
   Widget headerCard() {
     final user = AuthService.currentUser ?? {};
@@ -459,30 +490,54 @@ class _MedecinHomeState extends State<MedecinHome> {
     );
   }
 
-  Widget statCard(IconData icon, String title, String value, Color color) {
+  Widget statCard(
+    IconData icon,
+    String title,
+    String value,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
+      child: Padding(
+        padding: const EdgeInsets.only(right: 10),
+        child: Material(
           color: color.withOpacity(0.12),
           borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icon, color: color),
+                      if (onTap != null) ...[
+                        const Spacer(),
+                        Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: color.withOpacity(0.7),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(title, style: const TextStyle(color: Colors.black54)),
+                ],
               ),
             ),
-            Text(title, style: const TextStyle(color: Colors.black54)),
-          ],
+          ),
         ),
       ),
     );
@@ -499,12 +554,14 @@ class _MedecinHomeState extends State<MedecinHome> {
               "RDV",
               "${stats['rendezvous'] ?? rendezvous.length}",
               Colors.blue,
+              onTap: () => navigateToTab(1),
             ),
             statCard(
               Icons.people,
               "Patients",
               "${stats['patients'] ?? patients.length}",
               Colors.green,
+              onTap: () => navigateToTab(2),
             ),
           ],
         ),
@@ -516,12 +573,14 @@ class _MedecinHomeState extends State<MedecinHome> {
               "Urgents",
               "${stats['urgents'] ?? patients.where((p) => p['urgence'] == 'URGENT' || p['urgence'] == 'CRITIQUE').length}",
               Colors.red,
+              onTap: () => navigateToTab(2, patientUrgence: 'URGENT'),
             ),
             statCard(
               Icons.hourglass_top,
               "En attente",
               "${stats['demandes_en_attente'] ?? demandes.where((d) => d['statut'] == 'EN_ATTENTE').length}",
               Colors.orange,
+              onTap: () => navigateToTab(1),
             ),
           ],
         ),
@@ -674,6 +733,19 @@ class _MedecinHomeState extends State<MedecinHome> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (patientUrgenceFilter == 'URGENT')
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Chip(
+                  label: const Text('Patients urgents uniquement'),
+                  deleteIcon: const Icon(Icons.close, size: 18),
+                  onDeleted: () => setState(() => patientUrgenceFilter = 'TOUS'),
+                ),
+              ],
+            ),
+          ),
         searchField(
           hint: "Rechercher patient...",
           onChanged: (v) => setState(() => patientSearch = v),

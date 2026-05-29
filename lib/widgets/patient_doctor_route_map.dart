@@ -12,6 +12,8 @@ class PatientDoctorRouteMap extends StatefulWidget {
   final double doctorLng;
   final String? doctorAddress;
   final double height;
+  final void Function(RouteResult route, {required bool isRoadRoute})?
+      onRouteCalculated;
 
   const PatientDoctorRouteMap({
     super.key,
@@ -21,6 +23,7 @@ class PatientDoctorRouteMap extends StatefulWidget {
     required this.doctorLng,
     this.doctorAddress,
     this.height = 280,
+    this.onRouteCalculated,
   });
 
   @override
@@ -76,6 +79,11 @@ class _PatientDoctorRouteMapState extends State<PatientDoctorRouteMap> {
       _loading = false;
       _error = route == null ? 'Trajet approximatif (ligne directe)' : null;
     });
+
+    widget.onRouteCalculated?.call(
+      fallbackRoute,
+      isRoadRoute: route != null,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds(fallbackRoute));
   }

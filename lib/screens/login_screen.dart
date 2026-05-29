@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import 'forgot_password_screen.dart';
+import 'register_screen.dart';
 import 'patient_home.dart';
 import 'secretaire_home.dart';
 import 'medecin_home.dart';
@@ -177,7 +179,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: isLoading
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ForgotPasswordScreen(
+                              initialEmail: emailController.text.trim(),
+                            ),
+                          ),
+                        );
+                      },
+                child: const Text('Mot de passe oublié ?'),
+              ),
+            ),
+            const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
               height: 52,
@@ -192,6 +212,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     : const Icon(Icons.login),
                 label: Text(isLoading ? "Connexion..." : "Se connecter"),
               ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Vous n\'avez pas de compte ?',
+                  style: TextStyle(color: Colors.black54),
+                ),
+                TextButton(
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
+                          );
+                        },
+                  child: const Text('Créer un compte'),
+                ),
+              ],
             ),
           ],
         ),

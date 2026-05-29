@@ -2,13 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-/// URL de l'API Laravel selon la plateforme.
 class ApiConfig {
-  /// true = émulateur Android | false = téléphone physique (même Wi‑Fi que le PC)
   static const bool androidEmulator = true;
 
-  /// IP du PC : ipconfig dans PowerShell (IPv4)
-  static const String lanHost = '192.168.1.31';
+  static const String lanHost = '192.168.72.64';
 
   static const int port = 8000;
 

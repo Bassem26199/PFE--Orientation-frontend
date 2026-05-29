@@ -115,6 +115,74 @@ class AuthService {
     };
   }
 
+  static Future<Map<String, dynamic>> forgotPassword({
+    required String email,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/forgot-password'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'email': email.trim()}),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      return {
+        'status': response.statusCode,
+        'success': data['success'] == true,
+        'message': data['message']?.toString() ?? 'Erreur',
+        'data': data['data'],
+      };
+    } catch (_) {
+      return {
+        'status': 0,
+        'success': false,
+        'message': 'Impossible de joindre l\'API ($baseUrl).',
+        'data': null,
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> resetPassword({
+    required String email,
+    required String token,
+    required String nouveauMotDePasse,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/reset-password'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email.trim(),
+          'token': token.trim(),
+          'nouveau_mot_de_passe': nouveauMotDePasse,
+        }),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      return {
+        'status': response.statusCode,
+        'success': data['success'] == true,
+        'message': data['message']?.toString() ?? 'Erreur',
+        'errors': data['errors'],
+      };
+    } catch (_) {
+      return {
+        'status': 0,
+        'success': false,
+        'message': 'Impossible de joindre l\'API ($baseUrl).',
+        'errors': null,
+      };
+    }
+  }
+
   static Future<void> logout() async {
     token = null;
     currentUser = null;

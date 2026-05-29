@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../services/auth_service.dart';
+import '../utils/orientation_display.dart';
 import 'doctors_by_specialite_screen.dart';
 import 'login_screen.dart';
 
@@ -234,6 +235,7 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
         final engineVersion = result["engine_version"]?.toString();
         final idSpecialite = result["id_specialite"];
         final nomSpecialite = result["nom_specialite"]?.toString() ?? "";
+        final specialiteDisponible = result["specialite_disponible"] != false;
         final ageFromApi = result["age_patient"] ?? patientAge;
         final ageNum = ageFromApi != null ? int.tryParse(ageFromApi.toString()) : patientAge;
 
@@ -248,9 +250,10 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
           );
         }
 
-        final isPediatrie = idSpecialite == 3 ||
-            nomSpecialite.toLowerCase().contains('pédiat') ||
-            nomSpecialite.toLowerCase().contains('pediat');
+        final isPediatrie = specialiteDisponible &&
+            (idSpecialite == 3 ||
+                nomSpecialite.toLowerCase().contains('pédiat') ||
+                nomSpecialite.toLowerCase().contains('pediat'));
 
         if (isPediatrie && ageNum != null && ageNum > 17) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -267,10 +270,11 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
 
         showResultDialog(
           result: Map<String, dynamic>.from(result),
-          specialite: result["nom_specialite"]?.toString() ?? "Non définie",
+          specialite: nomSpecialite.isNotEmpty ? nomSpecialite : "Non définie",
           urgence: result["niveau_urgence"]?.toString() ?? "-",
           agePatient: result["age_patient"],
           profil: result["profil"]?.toString(),
+          specialiteDisponible: specialiteDisponible,
         );
       } else {
         final message = data["message"]?.toString() ??
@@ -281,11 +285,15 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      final detail = e.toString().replaceFirst('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Impossible de joindre le serveur. Vérifiez l'URL API et que Laravel tourne.",
+            detail.contains('Timeout') || detail.contains('timed out')
+                ? "Le serveur met trop de temps à répondre. Réessayez ou vérifiez Ollama."
+                : "Impossible de joindre le serveur. Vérifiez l'URL API (${ApiConfig.baseUrl}) et que Laravel tourne.",
           ),
+          duration: const Duration(seconds: 6),
         ),
       );
     }
@@ -299,6 +307,7 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
     required String urgence,
     int? agePatient,
     String? profil,
+    bool specialiteDisponible = true,
   }) {
     final isUrgent = urgence == "URGENT";
     final isModere = urgence == "MODERE" || urgence == "MODÉRÉ";
@@ -314,6 +323,10 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
         : isModere
             ? Icons.info
             : Icons.check_circle;
+
+    final maladie = OrientationDisplay.maladieSuspectee(
+      Map<String, dynamic>.from(result),
+    );
 
     showDialog(
       context: context,
@@ -338,10 +351,73 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
               Text(
                 "Spécialité recommandée : $specialite",
                 textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
+              if (!specialiteDisponible) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: const Text(
+                    "Cette spécialité n'est pas encore disponible sur la plateforme. "
+                    "Vous pourrez consulter la liste des médecins lorsqu'elle sera ajoutée.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black87, fontSize: 13),
+                  ),
+                ),
+              ],
+              if (maladie != null && maladie.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.biotech, size: 20, color: Colors.blue.shade800),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Hypothèse clinique (IA)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        maladie,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          height: 1.35,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'À confirmer par un médecin — ne remplace pas un diagnostic.',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               Text(
-                "Niveau d’urgence : $urgence",
+                "Niveau d’urgence : ${OrientationDisplay.urgenceLabel(urgence)}",
                 style: TextStyle(color: color, fontWeight: FontWeight.bold),
               ),
               if (agePatient != null) ...[
@@ -374,13 +450,17 @@ class _AnalyserSymptomesScreenState extends State<AnalyserSymptomesScreen> {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
+                        final idSpec = result["id_specialite"];
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => DoctorsBySpecialiteScreen(
-                              idSpecialite: result["id_specialite"],
+                              idSpecialite: idSpec is int
+                                  ? idSpec
+                                  : int.tryParse(idSpec?.toString() ?? ''),
                               nomSpecialite: specialite,
                               idOrientation: result["id_orientation"] ?? 0,
+                              specialiteDisponible: specialiteDisponible,
                             ),
                           ),
                         );

@@ -26,6 +26,8 @@ class _SecretaireHomeState extends State<SecretaireHome> {
   List<Map<String, dynamic>> horaires = [];
   List<Map<String, dynamic>> exceptions = [];
   Map<String, dynamic> stats = {};
+  int dureeCreneauMinutes = 30;
+  bool savingDisponibilites = false;
 
   String rdvSearch = "";
   String rdvStatutFilter = "TOUS";
@@ -175,6 +177,8 @@ class _SecretaireHomeState extends State<SecretaireHome> {
       setState(() {
         horaires = _parseList(payload['horaires']);
         disponibiliteTexte = payload['texte']?.toString() ?? disponibiliteTexte;
+        dureeCreneauMinutes =
+            int.tryParse('${payload['duree_creneau_minutes'] ?? 30}') ?? 30;
         exceptions = _parseList(payload['exceptions']);
       });
     } catch (_) {}
@@ -418,6 +422,35 @@ Widget appDrawer() {
     ),
   );
 }
+  void navigateToTab(
+    int index, {
+    String? rdvStatut,
+    String? rdvSearchQuery,
+    String? caisseStatut,
+  }) {
+    setState(() {
+      selectedIndex = index;
+      if (index == 1) {
+        if (rdvStatut != null) rdvStatutFilter = rdvStatut;
+        if (rdvSearchQuery != null) {
+          rdvSearch = rdvSearchQuery;
+        } else if (rdvStatut != null) {
+          rdvSearch = '';
+        }
+      }
+      if (index == 3 && caisseStatut != null) {
+        caisseStatutFilter = caisseStatut;
+      }
+    });
+  }
+
+  String _todayIsoDate() {
+    final now = DateTime.now();
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$m-$d';
+  }
+
   Widget drawerItem(int index, IconData icon, String title) {
     final active = selectedIndex == index;
 
@@ -432,7 +465,7 @@ Widget appDrawer() {
       ),
       onTap: () {
         Navigator.pop(context);
-        setState(() => selectedIndex = index);
+        navigateToTab(index);
       },
     );
   }
@@ -481,30 +514,52 @@ Widget appDrawer() {
     );
   }
 
-  Widget statCard(IconData icon, String title, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget statCard(
+    IconData icon,
+    String title,
+    String value,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
             Icon(icon, color: color),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(title, style: const TextStyle(color: Colors.black54)),
+            if (onTap != null) ...[
+              const Spacer(),
+              Icon(Icons.arrow_forward_ios, size: 14, color: color.withOpacity(0.7)),
+            ],
           ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(title, style: const TextStyle(color: Colors.black54)),
+      ],
+    );
+
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.only(right: 10),
+        child: Material(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: content,
+            ),
+          ),
         ),
       ),
     );
@@ -537,22 +592,62 @@ Widget appDrawer() {
       children: [
         Row(
           children: [
-            statCard(Icons.pending_actions, "En attente", "$enAttente", Colors.orange),
-            statCard(Icons.check_circle, "Confirmés", "$confirmees", Colors.green),
+            statCard(
+              Icons.pending_actions,
+              "En attente",
+              "$enAttente",
+              Colors.orange,
+              onTap: () => navigateToTab(1, rdvStatut: 'EN_ATTENTE'),
+            ),
+            statCard(
+              Icons.check_circle,
+              "Confirmés",
+              "$confirmees",
+              Colors.green,
+              onTap: () => navigateToTab(1, rdvStatut: 'CONFIRMEE'),
+            ),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            statCard(Icons.cancel, "Refusés", "$refusees", Colors.red),
-            statCard(Icons.people, "Patients", "$patientsCount", Colors.blue),
+            statCard(
+              Icons.cancel,
+              "Refusés",
+              "$refusees",
+              Colors.red,
+              onTap: () => navigateToTab(1, rdvStatut: 'REFUSEE'),
+            ),
+            statCard(
+              Icons.people,
+              "Patients",
+              "$patientsCount",
+              Colors.blue,
+              onTap: () => navigateToTab(2),
+            ),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            statCard(Icons.today, "RDV aujourd'hui", "$rdvAujourdhui", Colors.purple),
-            statCard(Icons.payments, "Caisse", "${totalCaisse()} DT", Colors.teal),
+            statCard(
+              Icons.today,
+              "RDV aujourd'hui",
+              "$rdvAujourdhui",
+              Colors.purple,
+              onTap: () => navigateToTab(
+                1,
+                rdvStatut: 'CONFIRMEE',
+                rdvSearchQuery: _todayIsoDate(),
+              ),
+            ),
+            statCard(
+              Icons.payments,
+              "Caisse",
+              "${totalCaisse()} DT",
+              Colors.teal,
+              onTap: () => navigateToTab(3),
+            ),
           ],
         ),
         const SizedBox(height: 22),
@@ -954,8 +1049,20 @@ Widget appDrawer() {
         const SizedBox(height: 16),
         Row(
           children: [
-            statCard(Icons.payments, "Total", "${totalCaisse()} DT", Colors.blue),
-            statCard(Icons.check_circle, "Payés", "${caisse.where((e) => e["statut"] == "PAYÉ").length}", Colors.green),
+            statCard(
+              Icons.payments,
+              "Total",
+              "${totalCaisse()} DT",
+              Colors.blue,
+              onTap: () => navigateToTab(3, caisseStatut: 'TOUS'),
+            ),
+            statCard(
+              Icons.check_circle,
+              "Payés",
+              "${caisse.where((e) => e["statut"] == "PAYÉ").length}",
+              Colors.green,
+              onTap: () => navigateToTab(3, caisseStatut: 'PAYÉ'),
+            ),
           ],
         ),
         const SizedBox(height: 18),
@@ -1269,6 +1376,28 @@ Widget appDrawer() {
           )
         else
           ...horaires.map(horaireCard),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: whiteCard(),
+          child: Row(
+            children: [
+              const Icon(Icons.timelapse, color: Colors.blue),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Durée d\'un créneau : $dureeCreneauMinutes min',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                onPressed: showDureeCreneauDialog,
+                icon: const Icon(Icons.edit),
+                tooltip: 'Modifier la durée',
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
@@ -1318,11 +1447,170 @@ Widget appDrawer() {
     );
   }
 
+  Future<void> saveDisponibilites({int? nouvelleDuree}) async {
+    if (horaires.isEmpty) return;
+
+    setState(() => savingDisponibilites = true);
+
+    try {
+      final body = {
+        'texte': disponibiliteTexte,
+        'duree_creneau_minutes': nouvelleDuree ?? dureeCreneauMinutes,
+        'horaires': horaires
+            .map((h) => {
+                  'jour': h['jour'],
+                  'debut': h['debut'],
+                  'fin': h['fin'],
+                  'actif': h['actif'] == true,
+                })
+            .toList(),
+      };
+
+      final response = await http.put(
+        Uri.parse('${AuthService.baseUrl}/secretaire/disponibilites'),
+        headers: _headers(),
+        body: jsonEncode(body),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        final payload = data['data'] as Map<String, dynamic>;
+        setState(() {
+          horaires = _parseList(payload['horaires']);
+          disponibiliteTexte = payload['texte']?.toString() ?? disponibiliteTexte;
+          dureeCreneauMinutes =
+              int.tryParse('${payload['duree_creneau_minutes'] ?? dureeCreneauMinutes}') ??
+                  dureeCreneauMinutes;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Horaires enregistrés')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message']?.toString() ?? 'Erreur')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de l\'enregistrement')),
+        );
+      }
+    }
+
+    if (mounted) setState(() => savingDisponibilites = false);
+  }
+
+  void showDureeCreneauDialog() {
+    final controller = TextEditingController(text: '$dureeCreneauMinutes');
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Durée des créneaux'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Minutes (15 à 120)',
+            suffixText: 'min',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final value = int.tryParse(controller.text.trim());
+              if (value == null || value < 15 || value > 120) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Durée invalide (15-120 min)')),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              setState(() => dureeCreneauMinutes = value);
+              await saveDisponibilites(nouvelleDuree: value);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void showEditHoraireDialog(Map<String, dynamic> h) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Les horaires du ${h["jour"]} sont gérés par le médecin (lecture seule).',
+    final debutController = TextEditingController(
+      text: h['debut']?.toString() == '-' ? '09:00' : '${h['debut']}',
+    );
+    final finController = TextEditingController(
+      text: h['fin']?.toString() == '-' ? '17:00' : '${h['fin']}',
+    );
+    var actif = h['actif'] == true;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Horaires — ${h['jour']}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: const Text('Ouvert ce jour'),
+                value: actif,
+                onChanged: (v) => setDialogState(() => actif = v),
+              ),
+              if (actif) ...[
+                TextField(
+                  controller: debutController,
+                  decoration: const InputDecoration(
+                    labelText: 'Heure de début',
+                    hintText: '09:00',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: finController,
+                  decoration: const InputDecoration(
+                    labelText: 'Heure de fin',
+                    hintText: '17:00',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: savingDisponibilites
+                  ? null
+                  : () async {
+                      final index = horaires.indexWhere((x) => x['jour'] == h['jour']);
+                      if (index < 0) return;
+
+                      horaires[index] = {
+                        'jour': h['jour'],
+                        'debut': actif ? debutController.text.trim() : '-',
+                        'fin': actif ? finController.text.trim() : '-',
+                        'actif': actif,
+                      };
+
+                      Navigator.pop(context);
+                      setState(() {});
+                      await saveDisponibilites();
+                    },
+              child: savingDisponibilites
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Enregistrer'),
+            ),
+          ],
         ),
       ),
     );

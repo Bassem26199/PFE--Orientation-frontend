@@ -32,6 +32,8 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
   double? _patientLat;
   double? _patientLng;
   bool _mapLoading = true;
+  String? _distanceLabel;
+  bool _routeCalculating = false;
 
   @override
   void initState() {
@@ -88,11 +90,38 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
     }
 
     if (!mounted) return;
+    final hasRoute =
+        _patientLat != null && _patientLng != null && lat != null && lng != null;
     setState(() {
       _doctorLat = lat;
       _doctorLng = lng;
       _mapLoading = false;
+      _routeCalculating = hasRoute;
     });
+  }
+
+  String _formatDirectDistance(dynamic distanceKm) {
+    if (distanceKm == null) return '';
+    final value = distanceKm is num
+        ? distanceKm.toDouble()
+        : double.tryParse(distanceKm.toString());
+    if (value == null) return '';
+    final label =
+        value < 1 ? '${(value * 1000).round()} m' : '${value.toStringAsFixed(1)} km';
+    return '$label (ligne directe)';
+  }
+
+  String _profileDistanceLine(String ville, dynamic apiDistance, String note) {
+    if (_distanceLabel != null) {
+      return '$ville • $_distanceLabel • ⭐ $note';
+    }
+    if (_routeCalculating) {
+      return '$ville • Calcul de l\'itinéraire... • ⭐ $note';
+    }
+    if (apiDistance != null) {
+      return '$ville • ${_formatDirectDistance(apiDistance)} • ⭐ $note';
+    }
+    return '$ville • ⭐ $note';
   }
 
   Future<void> openMap() async {
@@ -230,6 +259,18 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
             doctorLng: _doctorLng!,
             doctorAddress: adresse.isNotEmpty ? adresse : null,
             height: 280,
+            onRouteCalculated: (route, {required bool isRoadRoute}) {
+              if (!mounted) return;
+              setState(() {
+                _routeCalculating = false;
+                if (isRoadRoute && route.durationMinutes > 0) {
+                  _distanceLabel =
+                      '${route.distanceLabel} • ${route.durationLabel} en voiture';
+                } else {
+                  _distanceLabel = '${route.distanceLabel} (ligne directe)';
+                }
+              });
+            },
           )
         else if (hasDoctor)
           Column(
@@ -321,9 +362,8 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    distance != null
-                        ? "$ville • ${distance} km • ⭐ $note"
-                        : "$ville • ⭐ $note",
+                    _profileDistanceLine(ville, distance, note),
+                    textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ],

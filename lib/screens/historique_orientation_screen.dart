@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
+import '../utils/orientation_display.dart';
 
 class HistoriqueOrientationScreen extends StatefulWidget {
   const HistoriqueOrientationScreen({super.key});
@@ -103,6 +104,9 @@ class _HistoriqueOrientationScreenState
         orientation["created_at"] ??
         orientation["date_creation"] ??
         "-";
+    final maladie = OrientationDisplay.maladieSuspectee(
+      Map<String, dynamic>.from(orientation),
+    );
 
     final color = urgenceColor(urgence);
 
@@ -140,9 +144,22 @@ class _HistoriqueOrientationScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "$date • $urgence",
+                  "$date • ${OrientationDisplay.urgenceLabel(urgence.toString())}",
                   style: const TextStyle(color: Colors.black54),
                 ),
+                if (maladie != null && maladie.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    maladie,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.blue.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

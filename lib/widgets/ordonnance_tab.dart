@@ -196,10 +196,11 @@ class _OrdonnanceTabState extends State<OrdonnanceTab> {
     final urgence = _proposal?['niveau_urgence']?.toString() ?? '';
     final symptomes = (_proposal?['symptomes'] as List?)?.join(', ') ?? '';
     final specialite = _proposal?['specialite']?.toString();
-    final source = _proposal?['source']?.toString() ?? 'rules';
+    final source = _proposal?['source']?.toString() ?? 'none';
     final analyseIa = _proposal?['analyse_ia']?.toString();
-    final geminiMessage = _proposal?['gemini_message']?.toString();
-    final isGemini = source == 'gemini';
+    final aiMessage = _proposal?['ai_message']?.toString();
+    final isOllama = source == 'ollama';
+    final hasSuggestions = (_proposal?['suggestions'] as List?)?.isNotEmpty ?? false;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -254,18 +255,18 @@ class _OrdonnanceTabState extends State<OrdonnanceTab> {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  isGemini
-                      ? 'Source : Gemini IA'
-                      : 'Source : moteur de regles',
+                  isOllama && hasSuggestions
+                      ? 'Source : Ollama IA'
+                      : 'Proposition Ollama indisponible',
                   style: const TextStyle(color: Colors.white, fontSize: 11),
                 ),
               ),
-              if (!isGemini &&
-                  geminiMessage != null &&
-                  geminiMessage.isNotEmpty) ...[
+              if ((!isOllama || !hasSuggestions) &&
+                  aiMessage != null &&
+                  aiMessage.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
-                  geminiMessage,
+                  aiMessage,
                   style: TextStyle(
                     color: Colors.amber.shade100,
                     fontSize: 11,
