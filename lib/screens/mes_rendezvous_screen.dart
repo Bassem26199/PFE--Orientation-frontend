@@ -22,7 +22,30 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
     fetchRendezVous();
   }
 
+  Map<String, dynamic>? prochainRdv;
+
+  Future<void> fetchProchainRdv() async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AuthService.baseUrl}/patient/prochain-rendezvous"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${AuthService.token}",
+        },
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        final raw = data['data']?['prochain_rendezvous'];
+        if (raw is Map) {
+          prochainRdv = Map<String, dynamic>.from(raw);
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> fetchRendezVous() async {
+    setState(() => isLoading = true);
+    await fetchProchainRdv();
     try {
       final response = await http.get(
         Uri.parse("${AuthService.baseUrl}/demandes-rendezvous"),
@@ -47,6 +70,14 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
     } catch (e) {
       setState(() => isLoading = false);
     }
+  }
+
+  bool isProchainDemande(Map rdv) {
+    if (prochainRdv == null || rdv['statut'] != 'CONFIRMEE') return false;
+    final date = rdv['date_souhaitee']?.toString();
+    final heure = (rdv['heure_souhaitee']?.toString() ?? '').substring(0, 5);
+    return prochainRdv!['date']?.toString() == date &&
+        prochainRdv!['heure']?.toString() == heure;
   }
 
   Color statutColor(String statut) {
@@ -227,20 +258,42 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                statut,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (isProchainDemande(rdv))
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'PROCHAIN',
+                      style: TextStyle(
+                        color: Colors.green.shade800,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    statut,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -262,7 +315,40 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
                   onRefresh: fetchRendezVous,
                   child: ListView(
                     padding: const EdgeInsets.all(16),
-                    children: rendezvous.map((e) => rdvCard(e)).toList(),
+                    children: [
+                      if (prochainRdv != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.green.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Prochain rendez-vous confirmé',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                prochainRdv!['libelle']?.toString() ?? '',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(prochainRdv!['medecin']?.toString() ?? ''),
+                            ],
+                          ),
+                        ),
+                      ...rendezvous.map((e) => rdvCard(e)),
+                    ],
                   ),
                 ),
     );

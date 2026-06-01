@@ -7,6 +7,7 @@ import 'historique_orientation_screen.dart';
 import 'mes_ordonnances_screen.dart';
 import 'mon_profil_screen.dart';
 import 'public_navigation_screen.dart';
+import '../widgets/patient_prochain_rdv_banner.dart';
 
 class PatientHome extends StatelessWidget {
   const PatientHome({super.key});
@@ -95,7 +96,8 @@ class PatientHome extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 30),
+            const PatientProchainRdvBanner(),
+            const SizedBox(height: 16),
             Expanded(
               child: GridView.count(
                 crossAxisCount: 2,

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
@@ -9,6 +12,7 @@ import '../services/avis_service.dart';
 import 'welcome_screen.dart';
 import 'analyser_symptomes_screen.dart';
 import 'login_screen.dart';
+import 'create_rendezvous_screen.dart';
 
 class PublicNavigationScreen extends StatefulWidget {
   const PublicNavigationScreen({super.key});
@@ -187,7 +191,7 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => LoginScreen()),
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
               );
             },
             child: const Text("Se connecter"),
@@ -195,6 +199,134 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> openRdvForDoctor(Map<String, dynamic> d) async {
+    if (!AuthService.isLoggedIn) {
+      requireLoginForRdv();
+      return;
+    }
+
+    if (!AuthService.isPatient) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Seul un compte patient peut prendre rendez-vous. '
+            'Déconnectez-vous et reconnectez-vous avec un compte patient.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('${AuthService.baseUrl}/orientations/patient'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer ${AuthService.token}',
+        },
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 401) {
+        await AuthService.logout();
+        requireLoginForRdv();
+        return;
+      }
+
+      if (response.statusCode != 200 || data['success'] != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              data['message']?.toString() ?? 'Impossible de charger votre orientation.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final rawList = data['data'];
+      final list = rawList is List ? rawList : [];
+
+      if (list.isEmpty) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Orientation requise'),
+            content: const Text(
+              'Pour prendre rendez-vous, commencez par analyser vos symptômes. '
+              'L\'application vous orientera vers la bonne spécialité.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Fermer'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AnalyserSymptomesScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Analyser mes symptômes'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final latest = Map<String, dynamic>.from(list.first as Map);
+      final idOrientation = int.tryParse('${latest['id_orientation']}') ?? 0;
+
+      if (idOrientation == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Orientation invalide.')),
+        );
+        return;
+      }
+
+      final doctorSpec = int.tryParse('${d['id_specialite']}');
+      final orientSpec = int.tryParse('${latest['id_specialite']}');
+
+      if (doctorSpec != null &&
+          orientSpec != null &&
+          doctorSpec != orientSpec) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ce médecin ne correspond pas à votre orientation '
+              '(${latest['nom_specialite'] ?? 'spécialité recommandée'}).',
+            ),
+          ),
+        );
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CreateRendezvousScreen(
+            doctor: d,
+            idOrientation: idOrientation,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau lors de la prise de rendez-vous.')),
+      );
+    }
   }
 
   Widget doctorCard(Map<String, dynamic> d) {
@@ -327,7 +459,7 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: requireLoginForRdv,
+                  onPressed: () => openRdvForDoctor(d),
                   icon: const Icon(Icons.event_available),
                   label: const Text("RDV"),
                 ),

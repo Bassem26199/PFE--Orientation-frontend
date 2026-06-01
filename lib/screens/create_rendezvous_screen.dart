@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
+import '../widgets/creneau_choice_grid.dart';
 
 class CreateRendezvousScreen extends StatefulWidget {
   final Map doctor;
@@ -71,12 +72,16 @@ class _CreateRendezvousScreenState extends State<CreateRendezvousScreen> {
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
 
+        final libres = list.where((s) => s['disponible'] != false && s['occupe'] != true);
+
         setState(() {
           creneaux = list;
           creneauxMessage = list.isEmpty
               ? (data['message']?.toString() ??
-                  'Aucun créneau disponible ce jour-là.')
-              : null;
+                  'Aucun créneau ce jour-là (cabinet fermé).')
+              : libres.isEmpty
+                  ? 'Tous les créneaux sont pris ce jour-là.'
+                  : null;
         });
       } else {
         setState(() {
@@ -211,38 +216,45 @@ class _CreateRendezvousScreenState extends State<CreateRendezvousScreen> {
             const SizedBox(height: 20),
             if (selectedDate != null) ...[
               const Text(
-                'Créneaux disponibles',
+                'Créneaux du cabinet',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Les créneaux en rouge sont déjà pris.',
+                style: TextStyle(color: Colors.black54, fontSize: 12),
               ),
               const SizedBox(height: 10),
               if (loadingCreneaux)
                 const Center(child: CircularProgressIndicator())
               else if (creneauxMessage != null)
-                Text(creneauxMessage!, style: const TextStyle(color: Colors.orange))
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(creneauxMessage!, style: const TextStyle(color: Colors.orange)),
+                      if (creneaux.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: CreneauChoiceGrid(
+                              creneaux: creneaux,
+                              selectedHeure: selectedHeure,
+                              onHeureSelected: (h) => setState(() => selectedHeure = h),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                )
               else
                 Expanded(
-                  child: GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      childAspectRatio: 2.2,
+                  child: SingleChildScrollView(
+                    child: CreneauChoiceGrid(
+                      creneaux: creneaux,
+                      selectedHeure: selectedHeure,
+                      onHeureSelected: (h) => setState(() => selectedHeure = h),
                     ),
-                    itemCount: creneaux.length,
-                    itemBuilder: (context, index) {
-                      final slot = creneaux[index];
-                      final heure = slot['heure']?.toString() ?? '';
-                      final label = slot['label']?.toString() ?? heure.substring(0, 5);
-                      final selected = selectedHeure == heure;
-
-                      return ChoiceChip(
-                        label: Text(label),
-                        selected: selected,
-                        onSelected: (_) {
-                          setState(() => selectedHeure = heure);
-                        },
-                      );
-                    },
                   ),
                 ),
             ] else

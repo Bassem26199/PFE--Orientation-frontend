@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
 import '../services/password_service.dart';
+import '../widgets/creneau_choice_grid.dart';
 import 'public_navigation_screen.dart';
 
 class SecretaireHome extends StatefulWidget {
@@ -27,6 +28,7 @@ class _SecretaireHomeState extends State<SecretaireHome> {
   List<Map<String, dynamic>> exceptions = [];
   Map<String, dynamic> stats = {};
   int dureeCreneauMinutes = 30;
+  int? idMedecin;
   bool savingDisponibilites = false;
 
   String rdvSearch = "";
@@ -90,6 +92,7 @@ class _SecretaireHomeState extends State<SecretaireHome> {
       setState(() {
         stats = Map<String, dynamic>.from(payload['stats'] ?? {});
         cabinetName = payload['cabinet']?['nom']?.toString() ?? cabinetName;
+        idMedecin = int.tryParse('${payload['cabinet']?['id_medecin'] ?? ''}');
         disponibiliteTexte =
             payload['cabinet']?['disponibilite']?.toString() ?? '';
         if (payload['demandes_recentes'] != null) {
@@ -184,16 +187,134 @@ class _SecretaireHomeState extends State<SecretaireHome> {
     } catch (_) {}
   }
 
-  Future<void> traiterDemande(int idDemande, String action) async {
+  String formatHeureAffichage(dynamic heure) {
+    final raw = heure?.toString() ?? '';
+    if (raw.isEmpty || raw == '-') return '-';
+    return raw.length >= 5 ? raw.substring(0, 5) : raw;
+  }
+
+  String libelleStatutConsultation(String? statut) {
+    switch (statut) {
+      case 'TERMINE':
+        return 'Terminée';
+      case 'ANNULE':
+        return 'Annulée';
+      case 'PLANIFIE':
+      default:
+        return 'Planifiée';
+    }
+  }
+
+  Color couleurStatutConsultation(String? statut) {
+    switch (statut) {
+      case 'TERMINE':
+        return Colors.green;
+      case 'ANNULE':
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  Future<void> updateStatutConsultation(int idRendezvous, String statut) async {
+    try {
+      final response = await http.put(
+        Uri.parse(
+          '${AuthService.baseUrl}/secretaire/rendezvous/$idRendezvous/statut-consultation',
+        ),
+        headers: _headers(),
+        body: jsonEncode({'statut_consultation': statut}),
+      );
+      final data = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? 'Statut mis à jour')),
+        );
+        loadAllData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? 'Erreur')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur serveur')),
+      );
+    }
+  }
+
+  void showStatutConsultationDialog({
+    required int idRendezvous,
+    required String? statutActuel,
+  }) {
+    var selection = statutActuel ?? 'PLANIFIE';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Statut de la consultation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Indiquez si le patient est passé au cabinet.',
+                style: TextStyle(color: Colors.black54, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              ...['PLANIFIE', 'TERMINE', 'ANNULE'].map((s) {
+                return RadioListTile<String>(
+                  title: Text(libelleStatutConsultation(s)),
+                  value: s,
+                  groupValue: selection,
+                  onChanged: (v) => setDialogState(() => selection = v!),
+                );
+              }),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                updateStatutConsultation(idRendezvous, selection);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> traiterDemande(
+    int idDemande,
+    String action, {
+    String? dateRendezvous,
+    String? heureRendezvous,
+  }) async {
     final endpoint = action == "CONFIRMER" ? "confirmer" : "refuser";
 
     try {
+      final Map<String, dynamic> body = {};
+      if (action == "CONFIRMER" &&
+          dateRendezvous != null &&
+          heureRendezvous != null) {
+        body['date_rendezvous'] = dateRendezvous;
+        body['heure_rendezvous'] = heureRendezvous;
+      }
+
       final response = await http.put(
         Uri.parse("${AuthService.baseUrl}/demandes-rendezvous/$idDemande/$endpoint"),
-        headers: {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${AuthService.token}",
-        },
+        headers: _headers(),
+        body: body.isEmpty ? null : jsonEncode(body),
       );
 
       final data = jsonDecode(response.body);
@@ -319,6 +440,8 @@ class _SecretaireHomeState extends State<SecretaireHome> {
       ),
       child: Text(
         text,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
         style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
       ),
     );
@@ -662,6 +785,67 @@ Widget appDrawer() {
     );
   }
 
+  List<Map<String, dynamic>> get patientsSansProchainRdv {
+    return patients.where((p) {
+      final prochain = '${p['prochainRdv'] ?? '-'}';
+      return prochain == '-' || p['peut_planifier_suivi'] == true;
+    }).toList();
+  }
+
+  Widget suiviRdvSection() {
+    final liste = patientsSansProchainRdv;
+    if (liste.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Suivi — prochain RDV à planifier',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Après la consultation, fixez ici le prochain rendez-vous du patient.',
+          style: TextStyle(color: Colors.black54, fontSize: 13),
+        ),
+        const SizedBox(height: 10),
+        ...liste.take(8).map((p) {
+          final name = '${p['prenom'] ?? ''} ${p['nom'] ?? ''}'.trim();
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: whiteCard(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  name.isEmpty ? 'Patient' : name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Dernier RDV : ${p['dernierRdv'] ?? '-'}',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: () => showPlanifierProchainRdvDialog(p),
+                  icon: const Icon(Icons.event_available, size: 18),
+                  label: const Text('Planifier le prochain RDV'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget rendezVousPage() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -682,6 +866,8 @@ Widget appDrawer() {
           ],
           onChanged: (v) => setState(() => rdvStatutFilter = v!),
         ),
+        const SizedBox(height: 16),
+        suiviRdvSection(),
         const SizedBox(height: 16),
         if (filteredDemandes.isEmpty)
           emptyState(
@@ -723,65 +909,648 @@ Widget appDrawer() {
                 child: Text(
                   patientName.isEmpty ? "Patient" : patientName,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              badge(statut, color),
+              const SizedBox(width: 8),
+              Flexible(child: badge(statut, color)),
             ],
           ),
           const SizedBox(height: 12),
-          infoRow(Icons.date_range, "Date souhaitée", demande["date_souhaitee"] ?? "-"),
-          infoRow(Icons.access_time, "Heure souhaitée", demande["heure_souhaitee"] ?? "-"),
+          if (statut == "CONFIRMEE" && demande["date_rendezvous"] != null) ...[
+            infoRow(Icons.date_range, "Date RDV", demande["date_rendezvous"] ?? "-"),
+            infoRow(
+              Icons.access_time,
+              "Créneau",
+              formatHeureAffichage(demande["heure_rendezvous"] ?? demande["heure_souhaitee"]),
+            ),
+          ] else ...[
+            infoRow(Icons.date_range, "Date souhaitée", demande["date_souhaitee"] ?? "-"),
+            infoRow(
+              Icons.access_time,
+              "Créneau demandé",
+              formatHeureAffichage(demande["heure_souhaitee"]),
+            ),
+          ],
           if (!compact)
             infoRow(Icons.history, "Date demande", demande["date_demande"]?.toString() ?? "-"),
-          if (!compact) ...[
-            const SizedBox(height: 12),
-            Row(
+          if (!compact && statut == "CONFIRMEE" && demande["id_rendezvous"] != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => showEditRdvDialog(demande),
-                    icon: const Icon(Icons.edit),
-                    label: const Text("Modifier"),
+                Icon(
+                  Icons.medical_services,
+                  size: 20,
+                  color: couleurStatutConsultation(
+                    demande["statut_consultation"]?.toString(),
                   ),
+                ),
+                Text(
+                  'Consultation : ${libelleStatutConsultation(demande["statut_consultation"]?.toString())}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final idRdv = int.tryParse('${demande['id_rendezvous']}');
+                    if (idRdv == null) return;
+                    showStatutConsultationDialog(
+                      idRendezvous: idRdv,
+                      statutActuel: demande['statut_consultation']?.toString(),
+                    );
+                  },
+                  child: const Text('Modifier le statut'),
                 ),
               ],
             ),
+          ],
+          if (!compact) ...[
+            const SizedBox(height: 12),
+            fullWidthOutlinedButton(
+              onPressed: () => showEditRdvDialog(demande),
+              icon: Icons.edit,
+              label: 'Modifier',
+            ),
             if (isPending) ...[
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => confirmAction(
-                        idDemande,
-                        "REFUSER",
-                        "Refuser la demande",
-                        Colors.red,
-                        Icons.cancel,
-                      ),
-                      icon: const Icon(Icons.close),
-                      label: const Text("Refuser"),
-                    ),
+              pairedActionButtons(
+                first: fullWidthOutlinedButton(
+                  onPressed: () => confirmAction(
+                    idDemande,
+                    "REFUSER",
+                    "Refuser la demande",
+                    Colors.red,
+                    Icons.cancel,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => confirmAction(
-                        idDemande,
-                        "CONFIRMER",
-                        "Confirmer la demande",
-                        Colors.green,
-                        Icons.check_circle,
-                      ),
-                      icon: const Icon(Icons.check),
-                      label: const Text("Confirmer"),
-                    ),
-                  ),
-                ],
+                  icon: Icons.close,
+                  label: 'Refuser',
+                ),
+                second: fullWidthElevatedButton(
+                  onPressed: () => showPlanifierRdvDialog(demande),
+                  icon: Icons.check,
+                  label: 'Confirmer',
+                ),
+              ),
+            ],
+            if (!isPending && statut == "CONFIRMEE" && demande["statut_consultation"] == "TERMINE") ...[
+              const SizedBox(height: 8),
+              fullWidthOutlinedButton(
+                  onPressed: () {
+                    final idPatient = int.tryParse('${demande['id_patient']}');
+                    if (idPatient == null) return;
+                    Map<String, dynamic> fiche;
+                    try {
+                      fiche = patients.firstWhere(
+                        (x) => x['id_patient'] == idPatient,
+                      );
+                    } catch (_) {
+                      fiche = {
+                        'id_patient': idPatient,
+                        'nom': demande['patient_nom'],
+                        'prenom': demande['patient_prenom'],
+                        'dernierRdv': demande['date_rendezvous'] ?? demande['date_souhaitee'],
+                        'prochainRdv': '-',
+                        'peut_planifier_suivi': true,
+                      };
+                    }
+                    showPlanifierProchainRdvDialog(fiche);
+                  },
+                icon: Icons.event_available,
+                label: 'Planifier le prochain RDV',
               ),
             ],
           ],
         ],
+      ),
+    );
+  }
+
+  String formatDateApi(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  void safeDialogSetState(
+    BuildContext dialogContext,
+    void Function(void Function()) setDialogState,
+    VoidCallback update,
+  ) {
+    if (dialogContext.mounted) {
+      setDialogState(update);
+    }
+  }
+
+  /// Deux boutons côte à côte si la place suffit, sinon empilés pleine largeur.
+  Widget pairedActionButtons({
+    required Widget first,
+    required Widget second,
+    double breakpoint = 420,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < breakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              first,
+              const SizedBox(height: 8),
+              second,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 8),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget fullWidthOutlinedButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          alignment: Alignment.center,
+        ),
+      ),
+    );
+  }
+
+  Widget fullWidthElevatedButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          alignment: Alignment.center,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+        ),
+      ),
+    );
+  }
+
+  Future<void> showPlanifierRdvDialog(Map<String, dynamic> demande) async {
+    final idDemande = int.tryParse('${demande['id_demande']}') ?? 0;
+    final medecinId = idMedecin;
+    if (idDemande == 0 || medecinId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de charger les créneaux (médecin non identifié).'),
+        ),
+      );
+      return;
+    }
+
+    DateTime? selectedDate;
+    final dateSouhaitee = demande['date_souhaitee']?.toString();
+    if (dateSouhaitee != null && dateSouhaitee.length >= 10) {
+      selectedDate = DateTime.tryParse(dateSouhaitee.substring(0, 10));
+    }
+    selectedDate ??= DateTime.now();
+
+    String? selectedHeure = demande['heure_souhaitee']?.toString();
+    List<Map<String, dynamic>> creneaux = [];
+    bool loadingCreneaux = true;
+    String? creneauxMessage;
+
+    Future<void> loadCreneaux(
+      DateTime date,
+      BuildContext dialogCtx,
+      void Function(void Function()) setDialogState,
+    ) async {
+      safeDialogSetState(dialogCtx, setDialogState, () {
+        loadingCreneaux = true;
+        creneauxMessage = null;
+      });
+
+      try {
+        final dateStr = formatDateApi(date);
+        final response = await http.get(
+          Uri.parse(
+            '${AuthService.baseUrl}/medecins/$medecinId/creneaux?date=$dateStr&exclude_demande=$idDemande',
+          ),
+          headers: _headers(),
+        );
+        final data = jsonDecode(response.body);
+
+        if (!dialogCtx.mounted) return;
+
+        if (response.statusCode == 200 && data['success'] == true) {
+          final payload = data['data'] as Map<String, dynamic>;
+          final list = (payload['creneaux'] as List? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final libres =
+              list.where((s) => s['disponible'] != false && s['occupe'] != true);
+
+          safeDialogSetState(dialogCtx, setDialogState, () {
+            creneaux = list;
+            loadingCreneaux = false;
+            if (list.isEmpty) {
+              creneauxMessage = 'Aucun créneau ce jour-là.';
+            } else if (libres.isEmpty) {
+              creneauxMessage = 'Tous les créneaux sont pris (rouge).';
+            } else {
+              creneauxMessage = null;
+            }
+            if (selectedHeure != null &&
+                list.any((s) => s['heure'] == selectedHeure && s['occupe'] == true)) {
+              selectedHeure = null;
+            }
+          });
+        } else {
+          safeDialogSetState(dialogCtx, setDialogState, () {
+            creneaux = [];
+            loadingCreneaux = false;
+            creneauxMessage = data['message']?.toString() ?? 'Erreur créneaux';
+          });
+        }
+      } catch (_) {
+        if (!dialogCtx.mounted) return;
+        safeDialogSetState(dialogCtx, setDialogState, () {
+          creneaux = [];
+          loadingCreneaux = false;
+          creneauxMessage = 'Erreur réseau';
+        });
+      }
+    }
+
+    if (!mounted) return;
+
+    var creneauxLoaded = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          if (!creneauxLoaded) {
+            creneauxLoaded = true;
+            Future.microtask(
+              () => loadCreneaux(selectedDate!, dialogCtx, setDialogState),
+            );
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Fixer le rendez-vous',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Souhait patient : ${demande['date_souhaitee']} à ${formatHeureAffichage(demande['heure_souhaitee'])}',
+                      style: const TextStyle(color: Colors.black54, fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate!,
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedDate = picked;
+                              selectedHeure = null;
+                              creneaux = [];
+                              loadingCreneaux = true;
+                            });
+                            await loadCreneaux(picked, dialogCtx, setDialogState);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_today),
+                        label: Text(formatDateApi(selectedDate!)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Choisir le créneau définitif',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    if (loadingCreneaux)
+                      const Center(child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
+                      ))
+                    else ...[
+                      if (creneauxMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            creneauxMessage!,
+                            style: const TextStyle(color: Colors.orange),
+                          ),
+                        ),
+                      if (creneaux.isNotEmpty)
+                        CreneauChoiceGrid(
+                          creneaux: creneaux,
+                          selectedHeure: selectedHeure,
+                          onHeureSelected: (h) => setDialogState(() => selectedHeure = h),
+                        ),
+                    ],
+                    const SizedBox(height: 20),
+                    pairedActionButtons(
+                      first: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Annuler'),
+                      ),
+                      second: ElevatedButton(
+                        onPressed: selectedHeure == null
+                            ? null
+                            : () {
+                                Navigator.pop(dialogContext);
+                                traiterDemande(
+                                  idDemande,
+                                  'CONFIRMER',
+                                  dateRendezvous: formatDateApi(selectedDate!),
+                                  heureRendezvous: selectedHeure,
+                                );
+                              },
+                        child: const Text('Confirmer'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> planifierProchainRdv(
+    int idPatient,
+    String dateRendezvous,
+    String heureRendezvous,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          '${AuthService.baseUrl}/secretaire/patients/$idPatient/prochain-rendezvous',
+        ),
+        headers: _headers(),
+        body: jsonEncode({
+          'date_rendezvous': dateRendezvous,
+          'heure_rendezvous': heureRendezvous,
+        }),
+      );
+      final data = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        var message = data['message']?.toString() ?? 'Prochain RDV planifié';
+        final payload = data['data'];
+        if (payload is Map && payload['email_confirmation_envoye'] == false) {
+          message =
+              '$message\n(Aucun email envoyé : vérifiez la configuration mail.)';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+        loadAllData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? 'Erreur')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur serveur')),
+      );
+    }
+  }
+
+  Future<void> showPlanifierProchainRdvDialog(Map<String, dynamic> patient) async {
+    final idPatient = int.tryParse('${patient['id_patient']}') ?? 0;
+    final medecinId = idMedecin;
+    if (idPatient == 0 || medecinId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de planifier (médecin non identifié).')),
+      );
+      return;
+    }
+
+    DateTime selectedDate = DateTime.now();
+    String? selectedHeure;
+    List<Map<String, dynamic>> creneaux = [];
+    bool loadingCreneaux = true;
+    String? creneauxMessage;
+
+    Future<void> loadCreneaux(
+      DateTime date,
+      BuildContext dialogCtx,
+      void Function(void Function()) setDialogState,
+    ) async {
+      safeDialogSetState(dialogCtx, setDialogState, () {
+        loadingCreneaux = true;
+        creneauxMessage = null;
+      });
+
+      try {
+        final dateStr = formatDateApi(date);
+        final response = await http.get(
+          Uri.parse(
+            '${AuthService.baseUrl}/medecins/$medecinId/creneaux?date=$dateStr',
+          ),
+          headers: _headers(),
+        );
+        final data = jsonDecode(response.body);
+
+        if (!dialogCtx.mounted) return;
+
+        if (response.statusCode == 200 && data['success'] == true) {
+          final payload = data['data'] as Map<String, dynamic>;
+          final list = (payload['creneaux'] as List? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final libres =
+              list.where((s) => s['disponible'] != false && s['occupe'] != true);
+
+          safeDialogSetState(dialogCtx, setDialogState, () {
+            creneaux = list;
+            loadingCreneaux = false;
+            creneauxMessage = list.isEmpty
+                ? 'Aucun créneau ce jour-là.'
+                : libres.isEmpty
+                    ? 'Tous les créneaux sont pris (rouge).'
+                    : null;
+          });
+        } else {
+          safeDialogSetState(dialogCtx, setDialogState, () {
+            creneaux = [];
+            loadingCreneaux = false;
+            creneauxMessage = data['message']?.toString() ?? 'Erreur créneaux';
+          });
+        }
+      } catch (_) {
+        if (!dialogCtx.mounted) return;
+        safeDialogSetState(dialogCtx, setDialogState, () {
+          creneaux = [];
+          loadingCreneaux = false;
+          creneauxMessage = 'Erreur réseau';
+        });
+      }
+    }
+
+    if (!mounted) return;
+
+    var creneauxLoaded = false;
+    final patientName = '${patient['prenom'] ?? ''} ${patient['nom'] ?? ''}'.trim();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          if (!creneauxLoaded) {
+            creneauxLoaded = true;
+            Future.microtask(
+              () => loadCreneaux(selectedDate, dialogCtx, setDialogState),
+            );
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Planifier le prochain rendez-vous',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      patientName.isEmpty ? 'Patient suivi' : patientName,
+                      style: const TextStyle(color: Colors.black54, fontSize: 13),
+                    ),
+                    if ((patient['dernierRdv'] ?? '-') != '-')
+                      Text(
+                        'Dernier RDV : ${patient['dernierRdv']}',
+                        style: const TextStyle(color: Colors.black54, fontSize: 13),
+                      ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedDate = picked;
+                              selectedHeure = null;
+                              creneaux = [];
+                              loadingCreneaux = true;
+                            });
+                            await loadCreneaux(picked, dialogCtx, setDialogState);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_today),
+                        label: Text(formatDateApi(selectedDate)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Créneau du prochain RDV',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    if (loadingCreneaux)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else ...[
+                      if (creneauxMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            creneauxMessage!,
+                            style: const TextStyle(color: Colors.orange),
+                          ),
+                        ),
+                      if (creneaux.isNotEmpty)
+                        CreneauChoiceGrid(
+                          creneaux: creneaux,
+                          selectedHeure: selectedHeure,
+                          onHeureSelected: (h) => setDialogState(() => selectedHeure = h),
+                        ),
+                    ],
+                    const SizedBox(height: 20),
+                    pairedActionButtons(
+                      first: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Annuler'),
+                      ),
+                      second: ElevatedButton(
+                        onPressed: selectedHeure == null
+                            ? null
+                            : () {
+                                Navigator.pop(dialogContext);
+                                planifierProchainRdv(
+                                  idPatient,
+                                  formatDateApi(selectedDate),
+                                  selectedHeure!,
+                                );
+                              },
+                        child: const Text('Enregistrer'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -814,25 +1583,18 @@ Widget appDrawer() {
                 style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text("Annuler"),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        traiterDemande(idDemande, action);
-                      },
-                      child: const Text("Valider"),
-                    ),
-                  ),
-                ],
+              pairedActionButtons(
+                first: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Annuler'),
+                ),
+                second: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    traiterDemande(idDemande, action);
+                  },
+                  child: const Text('Valider'),
+                ),
               ),
             ],
           ),
@@ -922,18 +1684,30 @@ Widget appDrawer() {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(fullName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                child: Text(
+                  fullName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () => showEditPatientDialog(p),
-                icon: const Icon(Icons.edit, color: Colors.blue),
+                icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
+                tooltip: 'Modifier',
               ),
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () => showAddPaymentDialog(
                   fullName,
                   idPatient: p['id_patient'] as int?,
                 ),
-                icon: const Icon(Icons.payments, color: Colors.green),
+                icon: const Icon(Icons.payments, color: Colors.green, size: 22),
+                tooltip: 'Paiement',
               ),
             ],
           ),
@@ -944,6 +1718,44 @@ Widget appDrawer() {
           infoRow(Icons.cake, "Âge", "${p["age"]}"),
           infoRow(Icons.event, "Dernier RDV", p["dernierRdv"]),
           infoRow(Icons.event_available, "Prochain RDV", p["prochainRdv"]),
+          if (p["id_rendezvous"] != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Icon(
+                  Icons.medical_services,
+                  size: 20,
+                  color: couleurStatutConsultation(p["dernierRdvStatut"]?.toString()),
+                ),
+                Text(
+                  'Consultation : ${libelleStatutConsultation(p["dernierRdvStatut"]?.toString())}',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final idRdv = int.tryParse('${p['id_rendezvous']}');
+                    if (idRdv == null) return;
+                    showStatutConsultationDialog(
+                      idRendezvous: idRdv,
+                      statutActuel: p['dernierRdvStatut']?.toString(),
+                    );
+                  },
+                  child: const Text('Modifier le statut'),
+                ),
+              ],
+            ),
+          ],
+          if ((p["prochainRdv"] ?? "-") == "-" || p["peut_planifier_suivi"] == true) ...[
+            const SizedBox(height: 12),
+            fullWidthElevatedButton(
+              onPressed: () => showPlanifierProchainRdvDialog(p),
+              icon: Icons.calendar_month,
+              label: 'Planifier le prochain RDV',
+            ),
+          ],
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(12),
@@ -1167,33 +1979,31 @@ Widget appDrawer() {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(c["patient"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                child: Text(
+                  c["patient"],
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              badge(c["statut"], color),
+              const SizedBox(width: 8),
+              Flexible(child: badge(c["statut"], color)),
             ],
           ),
           const SizedBox(height: 12),
           infoRow(Icons.date_range, "Date", c["date"]),
           infoRow(Icons.payments, "Montant", "${c["montant"]} DT"),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => showEditMontantDialog(c),
-                  icon: const Icon(Icons.edit),
-                  label: const Text("Modifier"),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => showRecuDialog(c),
-                  icon: const Icon(Icons.print),
-                  label: const Text("Reçu"),
-                ),
-              ),
-            ],
+          pairedActionButtons(
+            first: fullWidthOutlinedButton(
+              onPressed: () => showEditMontantDialog(c),
+              icon: Icons.edit,
+              label: 'Modifier',
+            ),
+            second: fullWidthElevatedButton(
+              onPressed: () => showRecuDialog(c),
+              icon: Icons.print,
+              label: 'Reçu',
+            ),
           ),
         ],
       ),
@@ -1219,30 +2029,29 @@ Widget appDrawer() {
                 decoration: const InputDecoration(labelText: "Montant (DT)"),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: saving
-                          ? null
-                          : () async {
-                              await _updatePaiementStatut(ctx, id, 'NON_PAYÉ');
-                            },
-                      child: const Text('Non payé'),
-                    ),
+              pairedActionButtons(
+                first: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            await _updatePaiementStatut(ctx, id, 'NON_PAYÉ');
+                          },
+                    child: const Text('Non payé'),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: saving
-                          ? null
-                          : () async {
-                              await _updatePaiementStatut(ctx, id, 'PAYÉ');
-                            },
-                      child: const Text('Payé'),
-                    ),
+                ),
+                second: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            await _updatePaiementStatut(ctx, id, 'PAYÉ');
+                          },
+                    child: const Text('Payé'),
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -1434,9 +2243,13 @@ Widget appDrawer() {
           ),
           const SizedBox(width: 12),
           Expanded(child: Text(h["jour"], style: const TextStyle(fontWeight: FontWeight.bold))),
-          Text(
-            actif ? "${h["debut"]} - ${h["fin"]}" : "Fermé",
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          Flexible(
+            child: Text(
+              actif ? "${h["debut"]} - ${h["fin"]}" : "Fermé",
+              style: TextStyle(color: color, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+            ),
           ),
           IconButton(
             onPressed: () => showEditHoraireDialog(h),
@@ -1709,22 +2522,16 @@ Widget appDrawer() {
         infoTile(Icons.phone, "Téléphone", "${user["telephone"] ?? "20111222"}"),
         infoTile(Icons.verified_user, "Rôle", "${user["role"] ?? "SECRETAIRE"}"),
         const SizedBox(height: 18),
-        SizedBox(
-          height: 50,
-          child: ElevatedButton.icon(
-            onPressed: showEditProfileDialog,
-            icon: const Icon(Icons.edit),
-            label: const Text("Modifier mes informations"),
-          ),
+        fullWidthElevatedButton(
+          onPressed: showEditProfileDialog,
+          icon: Icons.edit,
+          label: 'Modifier mes informations',
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 50,
-          child: OutlinedButton.icon(
-            onPressed: showChangePasswordDialog,
-            icon: const Icon(Icons.lock_reset),
-            label: const Text("Changer mot de passe"),
-          ),
+        fullWidthOutlinedButton(
+          onPressed: showChangePasswordDialog,
+          icon: Icons.lock_reset,
+          label: 'Changer mot de passe',
         ),
       ],
     );
