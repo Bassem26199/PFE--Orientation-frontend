@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
 import '../utils/orientation_display.dart';
+import '../widgets/responsive_content.dart';
 
 class HistoriqueOrientationScreen extends StatefulWidget {
   const HistoriqueOrientationScreen({super.key});
@@ -175,18 +176,42 @@ class _HistoriqueOrientationScreenState
       appBar: AppBar(
         title: const Text("Historique orientation"),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : orientations.isEmpty
-              ? emptyState()
-              : RefreshIndicator(
-                  onRefresh: fetchHistorique,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children:
-                        orientations.map((e) => orientationCard(e)).toList(),
+      body: ResponsiveContent.list(
+        padding: EdgeInsets.zero,
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : orientations.isEmpty
+                ? emptyState()
+                : RefreshIndicator(
+                    onRefresh: fetchHistorique,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final useGrid = constraints.maxWidth >= 640;
+                        if (!useGrid) {
+                          return ListView(
+                            padding: const EdgeInsets.all(16),
+                            children: orientations
+                                .map((e) => orientationCard(e))
+                                .toList(),
+                          );
+                        }
+                        return GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 340,
+                            mainAxisSpacing: 14,
+                            crossAxisSpacing: 14,
+                            childAspectRatio: 2.4,
+                          ),
+                          itemCount: orientations.length,
+                          itemBuilder: (_, i) =>
+                              orientationCard(orientations[i]),
+                        );
+                      },
+                    ),
                   ),
-                ),
+      ),
     );
   }
 }

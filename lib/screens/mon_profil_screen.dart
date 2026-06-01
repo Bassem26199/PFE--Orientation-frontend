@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
 import '../services/password_service.dart';
 import '../widgets/address_map_picker.dart';
+import '../widgets/responsive_content.dart';
 import 'modifier_profil_screen.dart';
 import 'public_navigation_screen.dart';
 
@@ -365,13 +366,13 @@ class _MonProfilScreenState extends State<MonProfilScreen> {
       appBar: AppBar(
         title: const Text("Mon profil"),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : user == null
-              ? const Center(child: Text("Erreur chargement profil"))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
+      body: ResponsiveContent.list(
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : user == null
+                ? const Center(child: Text('Erreur chargement profil'))
+                : SingleChildScrollView(
+                    child: Column(
                     children: [
                       Container(
                         width: double.infinity,
@@ -476,6 +477,7 @@ class _MonProfilScreenState extends State<MonProfilScreen> {
                     ],
                   ),
                 ),
+      ),
     );
   }
 

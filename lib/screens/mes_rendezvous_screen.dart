@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
+import '../widgets/responsive_content.dart';
 
 class MesRendezVousScreen extends StatefulWidget {
   const MesRendezVousScreen({super.key});
@@ -307,15 +308,17 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
       appBar: AppBar(
         title: const Text("Mes rendez-vous"),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : rendezvous.isEmpty
-              ? emptyState()
-              : RefreshIndicator(
-                  onRefresh: fetchRendezVous,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
+      body: ResponsiveContent.list(
+        padding: EdgeInsets.zero,
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : rendezvous.isEmpty
+                ? emptyState()
+                : RefreshIndicator(
+                    onRefresh: fetchRendezVous,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
                       if (prochainRdv != null)
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
@@ -351,6 +354,7 @@ class _MesRendezVousScreenState extends State<MesRendezVousScreen> {
                     ],
                   ),
                 ),
+      ),
     );
   }
 }

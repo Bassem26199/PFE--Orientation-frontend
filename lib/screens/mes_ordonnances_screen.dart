@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/ordonnance_service.dart';
+import '../widgets/responsive_content.dart';
 
 class MesOrdonnancesScreen extends StatefulWidget {
   const MesOrdonnancesScreen({super.key});
@@ -39,42 +40,48 @@ class _MesOrdonnancesScreenState extends State<MesOrdonnancesScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _ordonnances.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade400),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Aucune ordonnance',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Vos ordonnances validées par le médecin apparaîtront ici.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ],
+      body: ResponsiveContent.list(
+        padding: EdgeInsets.zero,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _ordonnances.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.receipt_long,
+                              size: 64, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Aucune ordonnance',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Vos ordonnances validées par le médecin apparaîtront ici.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _ordonnances.length,
+                      itemBuilder: (context, index) {
+                        return _ordonnanceCard(_ordonnances[index]);
+                      },
                     ),
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _ordonnances.length,
-                    itemBuilder: (context, index) {
-                      final o = _ordonnances[index];
-                      return _ordonnanceCard(o);
-                    },
-                  ),
-                ),
+      ),
     );
   }
 
