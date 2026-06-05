@@ -18,6 +18,7 @@ class _AdminHomeState extends State<AdminHome> {
   Map<String, dynamic> stats = {};
   List<Map<String, dynamic>> medecins = [];
   List<Map<String, dynamic>> specialites = [];
+  List<Map<String, dynamic>> patients = [];
 
   final _formKey = GlobalKey<FormState>();
   final _mapKey = GlobalKey<AddressMapPickerState>();
@@ -48,12 +49,14 @@ class _AdminHomeState extends State<AdminHome> {
         AdminService.fetchDashboard(),
         AdminService.fetchMedecins(),
         AdminService.fetchSpecialites(),
+        AdminService.fetchPatients(),
       ]);
       if (!mounted) return;
       setState(() {
         stats = results[0] as Map<String, dynamic>;
         medecins = results[1] as List<Map<String, dynamic>>;
         specialites = results[2] as List<Map<String, dynamic>>;
+        patients = results[3] as List<Map<String, dynamic>>;
         if (idSpecialite == null && specialites.isNotEmpty) {
           final raw = specialites.first['id_specialite'];
           idSpecialite = raw is int ? raw : int.tryParse('$raw');
@@ -160,6 +163,13 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Widget _dashboardPage() {
+    final reclamations = stats['reclamations'] is List
+        ? (stats['reclamations'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final reclamationsCount = stats['reclamations_en_attente'] ?? reclamations.length;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -179,11 +189,232 @@ class _AdminHomeState extends State<AdminHome> {
           const SizedBox(width: 10),
           _statCard('RDV attente', '${stats['demandes_en_attente'] ?? 0}', Icons.pending_actions, Colors.red),
         ]),
+        if (reclamationsCount > 0) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Icon(Icons.report_problem, color: Colors.orange.shade700),
+              const SizedBox(width: 8),
+              Text(
+                'Reclamations en attente ($reclamationsCount)',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...reclamations.map(_reclamationCard),
+        ],
       ],
     );
   }
 
+  Widget _reclamationCard(Map<String, dynamic> r) {
+    final patient = '${r['patient_prenom'] ?? ''} ${r['patient_nom'] ?? ''}'.trim();
+    final secretaire = '${r['secretaire_prenom'] ?? ''} ${r['secretaire_nom'] ?? ''}'.trim();
+    final medecin = 'Dr. ${r['medecin_prenom'] ?? ''} ${r['medecin_nom'] ?? ''}'.trim();
+    final idRec = _idFrom(r['id_reclamation']);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: Colors.orange.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(patient, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('Cabinet : $medecin', style: const TextStyle(color: Colors.black54)),
+            Text('Par : $secretaire', style: const TextStyle(color: Colors.black54)),
+            Text('Date : ${r['date_reclamation'] ?? '-'}', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('${r['message'] ?? ''}'),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _traiterReclamation(idRec),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Marquer traitee'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _traiterReclamation(int id) async {
+    try {
+      final result = await AdminService.traiterReclamation(id);
+      await loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Reclamation traitee')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   int _idFrom(dynamic v) => v is int ? v : int.parse('$v');
+
+  Widget _patientsListPage() {
+    if (patients.isEmpty) {
+      return const Center(child: Text('Aucun patient enregistre'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: patients.length,
+      itemBuilder: (_, i) {
+        final p = patients[i];
+        final actif = p['actif'] == 1 || p['actif'] == true;
+        final id = _idFrom(p['id_patient']);
+        final name = '${p['prenom']} ${p['nom']}';
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: actif ? Colors.teal.shade50 : Colors.grey.shade200,
+              child: Icon(Icons.person, color: actif ? Colors.teal : Colors.grey),
+            ),
+            title: Text(name),
+            subtitle: Text(
+              '${p['email']}\n${p['telephone'] ?? ''}${actif ? '' : '\n(Banni)'}',
+            ),
+            isThreeLine: true,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (actif)
+                  IconButton(
+                    icon: const Icon(Icons.block, color: Colors.orange),
+                    tooltip: 'Bannir',
+                    onPressed: () => _confirmBanPatient(p),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.check_circle, color: Colors.green),
+                    tooltip: 'Reactiver',
+                    onPressed: () => _unbanPatient(id),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  tooltip: 'Supprimer',
+                  onPressed: () => _confirmDeletePatient(p),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmBanPatient(Map<String, dynamic> p) async {
+    final id = _idFrom(p['id_patient']);
+    final name = '${p['prenom']} ${p['nom']}';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bannir le patient ?'),
+        content: Text(
+          'Le compte de $name sera desactive.\n'
+          'Il ne pourra plus se connecter.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Bannir'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    try {
+      final result = await AdminService.banPatient(id);
+      await loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Patient banni')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Future<void> _unbanPatient(int id) async {
+    try {
+      final result = await AdminService.unbanPatient(id);
+      await loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Patient reactive')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Future<void> _confirmDeletePatient(Map<String, dynamic> p) async {
+    final id = _idFrom(p['id_patient']);
+    final name = '${p['prenom']} ${p['nom']}';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le patient ?'),
+        content: Text(
+          'Confirmer la suppression définitive de $name ?\n\n'
+          'Le compte, les rendez-vous, orientations, ordonnances, avis '
+          'et paiements associés seront supprimés. Cette action est irréversible.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    try {
+      final result = await AdminService.deletePatient(id);
+      await loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Operation effectuee')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
 
   Widget _medecinsListPage() {
     if (medecins.isEmpty) {
@@ -639,6 +870,15 @@ class _AdminHomeState extends State<AdminHome> {
                 setState(() => selectedIndex = 2);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('Patients'),
+              selected: selectedIndex == 3,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => selectedIndex = 3);
+              },
+            ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -664,6 +904,7 @@ class _AdminHomeState extends State<AdminHome> {
                 _dashboardPage(),
                 _medecinsListPage(),
                 _createMedecinPage(),
+                _patientsListPage(),
               ],
             ),
     );

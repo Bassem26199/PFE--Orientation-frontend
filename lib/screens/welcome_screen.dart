@@ -93,7 +93,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  void goToUserSpace() {
+  Future<void> goToUserSpace() async {
+    if (AuthService.isLoggedIn) {
+      final ok = await AuthService.ensureActiveSession();
+      if (!ok) {
+        if (!mounted) return;
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Votre compte a été banni. Contactez l\'administration.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     final role = AuthService.currentUser?["role"];
 
     if (role == "PATIENT") {

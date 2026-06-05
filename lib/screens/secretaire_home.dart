@@ -1031,6 +1031,54 @@ Widget appDrawer() {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  String formatHeureApi(DateTime dateTime) {
+    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  String formatDateTimeDisplay(DateTime dateTime) {
+    return '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year} '
+        'à ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  int calculateAgeFromBirthDate(DateTime dob) {
+    final today = DateTime.now();
+    var age = today.year - dob.year;
+    if (today.month < dob.month ||
+        (today.month == dob.month && today.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  Future<DateTime?> pickConsultationDateTime(
+    BuildContext dialogContext,
+    DateTime initial,
+  ) async {
+    final pickedDate = await showDatePicker(
+      context: dialogContext,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+    );
+    if (pickedDate == null) return null;
+
+    if (!dialogContext.mounted) return null;
+
+    final pickedTime = await showTimePicker(
+      context: dialogContext,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (pickedTime == null) return null;
+
+    return DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+  }
+
   void safeDialogSetState(
     BuildContext dialogContext,
     void Function(void Function()) setDialogState,
@@ -1639,6 +1687,12 @@ Widget appDrawer() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        fullWidthElevatedButton(
+          onPressed: showAddPatientDialog,
+          icon: Icons.person_add_alt_1,
+          label: 'Ajouter patient',
+        ),
+        const SizedBox(height: 16),
         searchField(
           hint: "Rechercher patient...",
           onChanged: (v) => setState(() => patientSearch = v),
@@ -1648,7 +1702,7 @@ Widget appDrawer() {
           emptyState(
             Icons.people,
             "Aucun patient suivi",
-            "Les patients apparaissent ici seulement après confirmation du rendez-vous.",
+            "Enregistrez un patient arrivé directement au cabinet ou confirmez une demande de RDV.",
           )
         else
           ...filteredPatients.map(patientCard),
@@ -1657,10 +1711,222 @@ Widget appDrawer() {
   }
 
   void showAddPatientDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Les patients sont suivis uniquement après confirmation du rendez-vous par le secrétariat.',
+    final nomCtrl = TextEditingController();
+    final prenomCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final telCtrl = TextEditingController();
+    final adresseCtrl = TextEditingController();
+    var genre = 'M';
+    DateTime? dateNaissance;
+    DateTime consultationDateTime = DateTime.now();
+    var saving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Passage sans rendez-vous'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                 
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: prenomCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Prénom *',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: nomCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nom *',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email *',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: telCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Téléphone',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: genre,
+                    decoration: const InputDecoration(
+                      labelText: 'Genre *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'M', child: Text('Homme')),
+                      DropdownMenuItem(value: 'F', child: Text('Femme')),
+                    ],
+                    onChanged: (v) => setDialogState(() => genre = v ?? 'M'),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      dateNaissance == null
+                          ? 'Date de naissance *'
+                          : 'Naissance : ${formatDateApi(dateNaissance!)}',
+                    ),
+                    subtitle: dateNaissance == null
+                        ? null
+                        : Text('Âge : ${calculateAgeFromBirthDate(dateNaissance!)} ans'),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: dateNaissance ?? DateTime(1990),
+                        firstDate: DateTime(1920),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => dateNaissance = picked);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: adresseCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Adresse (optionnel)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Date et heure de consultation *'),
+                    subtitle: Text(formatDateTimeDisplay(consultationDateTime)),
+                    trailing: const Icon(Icons.event),
+                    onTap: () async {
+                      final picked = await pickConsultationDateTime(
+                        ctx,
+                        consultationDateTime,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => consultationDateTime = picked);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final nom = nomCtrl.text.trim();
+                      final prenom = prenomCtrl.text.trim();
+                      final email = emailCtrl.text.trim();
+
+                      if (nom.isEmpty ||
+                          prenom.isEmpty ||
+                          email.isEmpty ||
+                          dateNaissance == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Nom, prénom, email et date de naissance sont obligatoires',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => saving = true);
+
+                      try {
+                        final payload = <String, dynamic>{
+                          'nom': nom,
+                          'prenom': prenom,
+                          'email': email,
+                          'telephone': telCtrl.text.trim(),
+                          'genre': genre,
+                          'date_naissance': formatDateApi(dateNaissance!),
+                          'date_rendezvous': formatDateApi(consultationDateTime),
+                          'heure_rendezvous': formatHeureApi(consultationDateTime),
+                        };
+                        if (adresseCtrl.text.trim().isNotEmpty) {
+                          payload['adresse'] = adresseCtrl.text.trim();
+                        }
+
+                        final response = await http.post(
+                          Uri.parse('${AuthService.baseUrl}/secretaire/patients'),
+                          headers: _headers(),
+                          body: jsonEncode(payload),
+                        );
+                        final data = jsonDecode(response.body);
+
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+
+                        if (response.statusCode >= 200 &&
+                            response.statusCode < 300 &&
+                            data['success'] == true) {
+                          await fetchPatients();
+                          await fetchDashboard();
+
+                          final message = data['message']?.toString() ?? 'Patient enregistré';
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          }
+                        } else {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(data['message']?.toString() ?? 'Erreur'),
+                              ),
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Enregistrer'),
+            ),
+          ],
         ),
       ),
     );
@@ -1689,6 +1955,14 @@ Widget appDrawer() {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
                   overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                onPressed: () => showReclamationDialog(p),
+                icon: const Icon(Icons.report_problem, color: Colors.orange, size: 22),
+                tooltip: 'Reclamer',
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -1769,6 +2043,109 @@ Widget appDrawer() {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void showReclamationDialog(Map<String, dynamic> p) {
+    final note = TextEditingController();
+    var saving = false;
+    final fullName = "${p['prenom']} ${p['nom']}";
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Reclamer $fullName'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Decrivez le probleme pour l\'administrateur (comportement, fraude, abus, etc.) :',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: note,
+                maxLines: 5,
+                maxLength: 2000,
+                decoration: const InputDecoration(
+                  labelText: 'Note de reclamation *',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final message = note.text.trim();
+                      if (message.length < 10) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('La note doit contenir au moins 10 caracteres'),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => saving = true);
+                      try {
+                        final id = p['id_patient'];
+                        final response = await http.post(
+                          Uri.parse('${AuthService.baseUrl}/secretaire/patients/$id/reclamation'),
+                          headers: _headers(),
+                          body: jsonEncode({'message': message}),
+                        );
+                        final data = jsonDecode(response.body);
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        if (response.statusCode >= 200 &&
+                            response.statusCode < 300 &&
+                            data['success'] == true) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                data['message']?.toString() ??
+                                    'Reclamation envoyee a l\'administrateur',
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(data['message']?.toString() ?? 'Erreur'),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erreur : $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Envoyer'),
+            ),
+          ],
+        ),
       ),
     );
   }

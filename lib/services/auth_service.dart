@@ -20,6 +20,70 @@ class AuthService {
     if (userString != null) {
       currentUser = jsonDecode(userString);
     }
+
+    if (!_isStoredUserActive()) {
+      await logout();
+      return;
+    }
+
+    if (token != null) {
+      await validateSession();
+    }
+  }
+
+  static bool _isStoredUserActive() {
+    if (currentUser == null) return true;
+    final actif = currentUser!['actif'];
+    return actif == null || actif == 1 || actif == true;
+  }
+
+  /// Vérifie auprès du serveur que le compte est toujours actif.
+  /// Retourne false si le compte est banni (session effacée).
+  static Future<bool> validateSession() async {
+    if (token == null) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/me"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer $token",
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 403 || response.statusCode == 401) {
+        await logout();
+        return false;
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['data'] is Map) {
+          final user = Map<String, dynamic>.from(data['data'] as Map);
+          final actif = user['actif'];
+          if (actif == 0 || actif == false) {
+            await logout();
+            return false;
+          }
+          currentUser = user;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString("user", jsonEncode(currentUser));
+          return true;
+        }
+      }
+    } catch (_) {
+      // Réseau indisponible : on garde la session locale.
+    }
+
+    return token != null;
+  }
+
+  static Future<bool> ensureActiveSession() async {
+    if (!_isStoredUserActive()) {
+      await logout();
+      return false;
+    }
+    return validateSession();
   }
 
   static Future<Map<String, dynamic>> login({

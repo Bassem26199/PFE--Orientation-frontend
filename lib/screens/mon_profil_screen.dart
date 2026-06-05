@@ -42,6 +42,25 @@ class _MonProfilScreenState extends State<MonProfilScreen> {
 
       if (!mounted) return;
 
+      if (response.statusCode == 403 || response.statusCode == 401) {
+        await AuthService.logout();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              data['message']?.toString() ??
+                  'Votre compte a été banni. Contactez l\'administration.',
+            ),
+          ),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const PublicNavigationScreen()),
+          (route) => false,
+        );
+        return;
+      }
+
       setState(() {
         user = data["data"];
         _adressePreview.text = user?["adresse"]?.toString() ?? "";

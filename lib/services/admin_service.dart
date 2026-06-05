@@ -102,4 +102,74 @@ class AdminService {
     }
     throw Exception(data['message'] ?? 'Erreur suppression');
   }
+
+  static Future<List<Map<String, dynamic>>> fetchPatients() async {
+    final response = await http.get(
+      Uri.parse('${AuthService.baseUrl}/admin/patients'),
+      headers: _headers(),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (data['success'] == true && data['data'] is List) {
+      return (data['data'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    throw Exception(data['message'] ?? 'Erreur chargement patients');
+  }
+
+  static Future<Map<String, dynamic>> banPatient(int idPatient) async {
+    final response = await http.put(
+      Uri.parse('${AuthService.baseUrl}/admin/patients/$idPatient/ban'),
+      headers: _headers(),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        data['success'] == true) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur bannissement');
+  }
+
+  static Future<Map<String, dynamic>> unbanPatient(int idPatient) async {
+    final response = await http.put(
+      Uri.parse('${AuthService.baseUrl}/admin/patients/$idPatient/unban'),
+      headers: _headers(),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        data['success'] == true) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur reactivation');
+  }
+
+  static Future<Map<String, dynamic>> deletePatient(int idPatient) async {
+    final response = await http.delete(
+      Uri.parse('${AuthService.baseUrl}/admin/patients/$idPatient'),
+      headers: _headers(),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        data['success'] == true) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur suppression patient');
+  }
+
+  static Future<Map<String, dynamic>> traiterReclamation(int idReclamation) async {
+    final response = await http.put(
+      Uri.parse('${AuthService.baseUrl}/admin/reclamations/$idReclamation/traiter'),
+      headers: _headers(),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        data['success'] == true) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur traitement reclamation');
+  }
 }
