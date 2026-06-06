@@ -285,21 +285,31 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     borderRadius: BorderRadius.circular(32),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: Image.asset(
-                          'assets/images/mediorient_logo.png',
-                          height: 140,
-                          fit: BoxFit.contain,
+                      CircleAvatar(
+                        radius: 34,
+                        backgroundColor: Colors.white,
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/images/mediorient_logo.png',
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 18),
+                      const Text(
+                        "Orientation Médicale Intelligente",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          height: 1.15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       const Text(
                         "Symptômes, médecins, conseils, avis et localisation dans une seule application.",
                         textAlign: TextAlign.center,

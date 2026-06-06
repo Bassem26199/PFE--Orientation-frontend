@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -35,6 +36,7 @@ class _ModifierProfilMedecinScreenState extends State<ModifierProfilMedecinScree
   bool isLoading = false;
   bool uploadingPhoto = false;
   String? photoUrl;
+  Uint8List? previewBytes;
 
   @override
   void initState() {
@@ -83,10 +85,13 @@ class _ModifierProfilMedecinScreenState extends State<ModifierProfilMedecinScree
 
     if (picked == null || !mounted) return;
 
-    setState(() => uploadingPhoto = true);
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      previewBytes = bytes;
+      uploadingPhoto = true;
+    });
 
     try {
-      final bytes = await picked.readAsBytes();
       final fileName = picked.name.isNotEmpty ? picked.name : 'photo.jpg';
       final contentType = _mimeTypeForFileName(fileName);
 
@@ -118,14 +123,18 @@ class _ModifierProfilMedecinScreenState extends State<ModifierProfilMedecinScree
         final updatedPhoto = Map<String, dynamic>.from(data['data'] as Map);
         final newUrl = updatedPhoto['photo_url']?.toString();
         final savedPath = updatedPhoto['photo_profil']?.toString();
+        final photoVersion = DoctorPhoto.parseVersion(updatedPhoto['photo_version']);
         setState(() {
-          photoUrl = newUrl != null ? DoctorPhoto.resolveUrl(newUrl) : photoUrl;
+          photoUrl = newUrl != null
+              ? DoctorPhoto.resolveUrl(newUrl, version: photoVersion)
+              : photoUrl;
         });
 
         AuthService.currentUser = {
           ...?AuthService.currentUser,
           'photo_url': updatedPhoto['photo_url'],
           'photo_profil': updatedPhoto['photo_profil'],
+          'photo_version': photoVersion,
         };
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user', jsonEncode(AuthService.currentUser));
@@ -135,8 +144,8 @@ class _ModifierProfilMedecinScreenState extends State<ModifierProfilMedecinScree
           SnackBar(
             content: Text(
               savedPath != null
-                  ? 'Photo enregistrée : $savedPath'
-                  : 'Photo de profil mise à jour',
+                  ? 'Photo enregistrée avec succès'
+                  : 'Photo de profil mise à jour avec succès',
             ),
           ),
         );
@@ -249,8 +258,12 @@ class _ModifierProfilMedecinScreenState extends State<ModifierProfilMedecinScree
               child: Stack(
                 children: [
                   DoctorAvatar(
-                    doctor: widget.user,
+                    doctor: {
+                      ...widget.user,
+                      ...?AuthService.currentUser,
+                    },
                     photoUrl: photoUrl,
+                    memoryBytes: previewBytes,
                     radius: 52,
                   ),
                   if (uploadingPhoto)

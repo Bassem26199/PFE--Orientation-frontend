@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   static const bool androidEmulator = true;
 
-  static const String lanHost = '192.168.72.64';
+  static const String lanHost = '192.168.150.64';
 
   static const int port = 8000;
 

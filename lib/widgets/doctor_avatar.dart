@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../utils/doctor_photo.dart';
@@ -5,6 +7,7 @@ import '../utils/doctor_photo.dart';
 class DoctorAvatar extends StatelessWidget {
   final Map<dynamic, dynamic>? doctor;
   final String? photoUrl;
+  final Uint8List? memoryBytes;
   final double radius;
   final int fallbackIndex;
   final Color? backgroundColor;
@@ -13,12 +16,14 @@ class DoctorAvatar extends StatelessWidget {
     super.key,
     this.doctor,
     this.photoUrl,
+    this.memoryBytes,
     this.radius = 30,
     this.fallbackIndex = 0,
     this.backgroundColor,
   });
 
   bool get _hasCustomPhoto {
+    if (memoryBytes != null && memoryBytes!.isNotEmpty) return true;
     if (photoUrl != null && photoUrl!.isNotEmpty) return true;
     if (doctor == null) return false;
     final url = doctor!['photo_url']?.toString();
@@ -27,8 +32,12 @@ class DoctorAvatar extends StatelessWidget {
   }
 
   String get _effectiveUrl {
+    final version = doctor != null
+        ? DoctorPhoto.parseVersion(doctor!['photo_version'])
+        : null;
+
     if (photoUrl != null && photoUrl!.isNotEmpty) {
-      return DoctorPhoto.resolveUrl(photoUrl!);
+      return DoctorPhoto.resolveUrl(photoUrl!, version: version);
     }
     if (doctor != null) {
       final fromDoctor = DoctorPhoto.urlFromDoctor(doctor!);
@@ -51,12 +60,23 @@ class DoctorAvatar extends StatelessWidget {
       );
     }
 
+    if (memoryBytes != null && memoryBytes!.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: bg,
+        backgroundImage: MemoryImage(memoryBytes!),
+      );
+    }
+
+    final url = _effectiveUrl;
+
     return CircleAvatar(
       radius: radius,
       backgroundColor: bg,
       child: ClipOval(
         child: Image.network(
-          _effectiveUrl,
+          url,
+          key: ValueKey(url),
           width: radius * 2,
           height: radius * 2,
           fit: BoxFit.cover,
