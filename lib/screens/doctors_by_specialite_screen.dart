@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
+import '../widgets/doctor_avatar.dart';
 import 'doctor_details_screen.dart';
 
 class DoctorsBySpecialiteScreen extends StatefulWidget {
@@ -112,15 +113,6 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
     }
   }
 
-  String getDoctorImage(int index) {
-    final images = [
-      "https://cdn-icons-png.flaticon.com/512/3774/3774299.png",
-      "https://cdn-icons-png.flaticon.com/512/3304/3304567.png",
-      "https://cdn-icons-png.flaticon.com/512/3870/3870822.png",
-    ];
-    return images[index % images.length];
-  }
-
   Widget doctorCard(Map doctor, int index) {
     final adresse = doctor['adresse_cabinet']?.toString() ?? '';
     final ville = doctor['ville']?.toString() ?? '-';
@@ -145,10 +137,10 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
       ),
       child: ListTile(
         contentPadding: EdgeInsets.zero,
-        leading: CircleAvatar(
+        leading: DoctorAvatar(
+          doctor: doctor,
           radius: 30,
-          backgroundColor: Colors.blue.shade50,
-          backgroundImage: NetworkImage(getDoctorImage(index)),
+          fallbackIndex: index,
         ),
         title: Text(
           "Dr. ${doctor['nom']} ${doctor['prenom']}",
@@ -178,7 +170,6 @@ class _DoctorsBySpecialiteScreenState extends State<DoctorsBySpecialiteScreen> {
               builder: (_) => DoctorDetailsScreen(
                 doctor: doctor,
                 idOrientation: widget.idOrientation,
-                imageUrl: getDoctorImage(index),
               ),
             ),
           );

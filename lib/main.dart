@@ -19,7 +19,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Orientation Médicale',
+      title: 'MediOrient',
       theme: AppTheme.lightTheme,
 
       // ✅ دائما الصفحة الرئيسية

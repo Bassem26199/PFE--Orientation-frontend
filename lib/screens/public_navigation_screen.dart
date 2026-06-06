@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
 import '../services/medecin_service.dart';
+import '../widgets/doctor_avatar.dart';
 import '../widgets/doctors_map_view.dart';
 import '../widgets/doctor_reviews_section.dart';
 import '../services/avis_service.dart';
@@ -329,7 +330,9 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
     }
   }
 
-  Widget doctorCard(Map<String, dynamic> d) {
+  Widget doctorCard(Map<String, dynamic> d, int index) {
+    final idMedecin = int.tryParse(d['id_medecin']?.toString() ?? '') ?? index;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -349,14 +352,10 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
         children: [
           Row(
             children: [
-              CircleAvatar(
+              DoctorAvatar(
+                doctor: d,
                 radius: 32,
-                backgroundColor: Colors.blue.shade50,
-                child: const Icon(
-                  Icons.medical_services,
-                  color: Colors.blue,
-                  size: 32,
-                ),
+                fallbackIndex: idMedecin,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -603,7 +602,9 @@ class _PublicDoctorsPageState extends State<PublicDoctorsPage> {
                         ),
                       )
                     else
-                      ...filteredDoctors.map(doctorCard),
+                      ...filteredDoctors.asMap().entries.map(
+                            (e) => doctorCard(e.value, e.key),
+                          ),
                   ],
                 ),
               ),

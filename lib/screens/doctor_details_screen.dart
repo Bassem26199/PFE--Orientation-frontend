@@ -8,18 +8,19 @@ import '../services/nominatim_service.dart';
 import '../widgets/location_map_view.dart';
 import '../widgets/patient_doctor_route_map.dart';
 import '../widgets/doctor_reviews_section.dart';
+import '../widgets/doctor_avatar.dart';
 import 'create_rendezvous_screen.dart';
 
 class DoctorDetailsScreen extends StatefulWidget {
   final Map doctor;
   final int idOrientation;
-  final String imageUrl;
+  final String? imageUrl;
 
   const DoctorDetailsScreen({
     super.key,
     required this.doctor,
     required this.idOrientation,
-    required this.imageUrl,
+    this.imageUrl,
   });
 
   @override
@@ -345,10 +346,11 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
               ),
               child: Column(
                 children: [
-                  CircleAvatar(
+                  DoctorAvatar(
+                    doctor: widget.doctor,
+                    photoUrl: widget.imageUrl,
                     radius: 55,
                     backgroundColor: Colors.white,
-                    backgroundImage: NetworkImage(widget.imageUrl),
                   ),
                   const SizedBox(height: 14),
                   Text(

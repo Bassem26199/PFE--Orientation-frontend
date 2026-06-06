@@ -6,6 +6,7 @@ import '../services/password_service.dart';
 import '../data/medicaments_data.dart';
 import '../widgets/location_map_view.dart';
 import '../widgets/ordonnance_tab.dart';
+import '../widgets/doctor_avatar.dart';
 import 'modifier_profil_medecin_screen.dart';
 import 'public_navigation_screen.dart';
 class MedecinHome extends StatefulWidget {
@@ -200,6 +201,26 @@ class _MedecinHomeState extends State<MedecinHome> {
         "Authorization": "Bearer ${AuthService.token}",
       };
 
+  Map<String, dynamic> get _medecinUser =>
+      medecinProfile ?? AuthService.currentUser ?? {};
+
+  Widget _medecinAvatar({
+    double radius = 32,
+    Color? backgroundColor,
+  }) {
+    final user = _medecinUser;
+    final idMedecin =
+        int.tryParse(user['id_medecin']?.toString() ?? '') ?? 0;
+
+    return DoctorAvatar(
+      doctor: user,
+      photoUrl: user['photo_url']?.toString(),
+      radius: radius,
+      fallbackIndex: idMedecin,
+      backgroundColor: backgroundColor,
+    );
+  }
+
   List<Map<String, dynamic>> get filteredRendezVous {
     return rendezvous.where((r) {
       final text =
@@ -320,7 +341,7 @@ class _MedecinHomeState extends State<MedecinHome> {
   }
 
   Widget appDrawer() {
-  final user = AuthService.currentUser ?? {};
+  final user = _medecinUser;
 
   return Drawer(
     child: SafeArea(
@@ -328,10 +349,7 @@ class _MedecinHomeState extends State<MedecinHome> {
         children: [
           // 👤 HEADER
           ListTile(
-            leading: const CircleAvatar(
-              radius: 26,
-              child: Icon(Icons.medical_services),
-            ),
+            leading: _medecinAvatar(radius: 26),
             title: Text(
               "Dr. ${user["prenom"] ?? ""} ${user["nom"] ?? ""}",
               style: const TextStyle(
@@ -445,7 +463,7 @@ class _MedecinHomeState extends State<MedecinHome> {
   }
 
   Widget headerCard() {
-    final user = AuthService.currentUser ?? {};
+    final user = _medecinUser;
 
     return Container(
       width: double.infinity,
@@ -459,10 +477,12 @@ class _MedecinHomeState extends State<MedecinHome> {
       ),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 34,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.medical_services, color: Colors.blue, size: 38),
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: _medecinAvatar(radius: 34, backgroundColor: Colors.white),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1388,7 +1408,7 @@ class _MedecinHomeState extends State<MedecinHome> {
   }
 
   Widget profilPage() {
-    final user = medecinProfile ?? AuthService.currentUser ?? {};
+    final user = _medecinUser;
     final adresse = user['adresse_cabinet']?.toString().trim() ?? '';
     final ville = user['ville']?.toString().trim() ?? '';
 
@@ -1400,10 +1420,7 @@ class _MedecinHomeState extends State<MedecinHome> {
           decoration: whiteCard(),
           child: Column(
             children: [
-              const CircleAvatar(
-                radius: 42,
-                child: Icon(Icons.medical_services, size: 42),
-              ),
+              _medecinAvatar(radius: 42),
               const SizedBox(height: 14),
               Text(
                 "Dr. ${user["prenom"] ?? ""} ${user["nom"] ?? ""}",
@@ -1666,7 +1683,18 @@ class _MedecinHomeState extends State<MedecinHome> {
     return Scaffold(
       drawer: appDrawer(),
       appBar: AppBar(
-        title: const Text("Espace Médecin"),
+        title: Row(
+          children: [
+            _medecinAvatar(radius: 18, backgroundColor: Colors.white),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                "Espace Médecin",
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(onPressed: loadAllData, icon: const Icon(Icons.refresh)),
         ],

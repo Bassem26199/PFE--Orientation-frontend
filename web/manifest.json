@@ -1,11 +1,11 @@
 {
-    "name": "frontend_orientation",
-    "short_name": "frontend_orientation",
+    "name": "MediOrient",
+    "short_name": "MediOrient",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#0D47A1",
+    "description": "Orientation médicale intelligente",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
